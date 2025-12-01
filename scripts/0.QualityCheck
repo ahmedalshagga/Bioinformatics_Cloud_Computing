@@ -1,0 +1,29 @@
+#Preliminary Quality Check
+
+#Initalising conda enviroment
+eval "$(conda shell.bash hook)"
+conda activate Quality_control_Env
+
+#Defining Direc
+raw_dir="raw_data"
+FASTQC_OUT="processed_data/fastqc"
+MULTIQC_OUT="processed_data/multiqc"
+
+
+#Create Output Directories
+echo "--> Creating output directories..."
+mkdir -p "$FASTQC_OUT"
+mkdir -p "$MULTIQC_OUT"
+
+#Running the Quality Check
+echo "Running FASTQC files in $raw_dir..."
+fastqc "$raw_dir"/*.fastq.gz -o "$FASTQC_OUT"
+
+echo "Running MultiQC aggregation..."
+multiqc "$FASTQC_OUT" -o "$MULTIQC_OUT"
+
+#  Cleanup of  fastqc folder since MultiQC has aggregated the data
+echo "--> Deleting raw FastQC files to save disk space..."
+rm -rf "$FASTQC_OUT"/*.zip
+
+echo "Report available in $MULTIQC_OUT/multiqc_report.html"
