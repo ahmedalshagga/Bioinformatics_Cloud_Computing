@@ -1,0 +1,70 @@
+MAGE-TAB Version	1.1
+Investigation Title	Transcriptional responses to isobutanol in Saccharomyces cerevisiae wild type and gln3 deletion strains
+
+Experimental Design	growth condition design	genotype design
+Experimental Design Term Source REF	EFO	EFO
+Experimental Design Term Accession Number	EFO_0001759	EFO:0001748
+
+Experimental Factor Name	growth condition	genotype
+Experimental Factor Type	growth condition	genotype
+Experimental Factor Term Source REF	EFO	EFO
+Experimental Factor Term Accession Number	EFO_0000523	EFO_0000513
+
+Person Last Name	Avalos	Kuroda
+Person First Name	José	Kouichi
+Person Mid Initials	L
+Person Email	javalos@princeton.edu	k_kuro@kais.kyoto-u.ac.jp
+Person Phone
+Person Fax
+Person Affiliation	Department of Chemical and Biological Engineering, Princeton University	Division of Applied Life Sciences, Graduate School of Agriculture, Kyoto University
+Person Address	Princeton, NJ, USA	Sakyo-ku, Kyoto, Japan
+Person Roles		submitter
+Person Roles Term Source REF
+Person Roles Term Accession Number
+
+Quality Control Type
+Quality Control Term Source REF
+Quality Control Term Accession Number
+
+Replicate Type
+Replicate Term Source REF
+Replicate Term Accession Number
+
+Normalization Type
+Normalization Term Source REF
+Normalization Term Accession Number
+
+Date of Experiment	2019-02-21
+Public Release Date	2019-11-14
+
+PubMed ID
+Publication DOI
+Publication Author List	Kouichi Kuroda, Sarah K. Hammer, Yukio Watanabe, José Montaño López, Gerald R. Fink, Gregory Stephanopoulos, Mitsuyoshi Ueda, José L. Avalos
+Publication Title	Critical Roles of the Pentose Phosphate Pathway and GLN3 in Isobutanol-Specific Tolerance in Yeast
+Publication Status	submitted
+Publication Status Term Source REF
+Publication Status Term Accession Number
+
+Experiment Description	To elucidate underlying mechanisms responsible for enhanced isobutanol tolerance of the gln3 deletion strain, we performed RNA-seq experiments in biological duplicate to compare the transcriptomic profiles of wild type and gln3 deletion strains grown in SC medium with or without 1.3% (v/v) isobutanol.
+
+Protocol Name	P-MTAB-87869	P-MTAB-87875	P-MTAB-87870	P-MTAB-87873	P-MTAB-87874	P-MTAB-87871	P-MTAB-87872
+Protocol Type	growth protocol	normalization data transformation protocol	sample collection protocol	nucleic acid sequencing protocol	high throughput sequence alignment protocol	nucleic acid extraction protocol	nucleic acid library construction protocol
+Protocol Term Source REF	EFO	EFO	EFO	EFO	EFO	EFO	EFO
+Protocol Term Accession Number	EFO_0003789	EFO_0003816	EFO_0005518	EFO_0004170	EFO_0004917	EFO_0002944	EFO_0004184
+Protocol Description	Wild-type BY4741 and BY4741 with gln3 deletion strains were pre-cultivated in liquid SC medium at 30°C for 24 h. Each pre-culture was inoculated into fresh liquid SC medium made inhouse with or without 1.3% (v/v) isobutanol to obtain a starting OD600 of 0.1. Cultivation was performed in test tubes with screw caps at 30°C for 12 h with 240 rpm shaking.	Transcript quantification, reported as FPKM (fragments per kilobase of transcript per million fragments mapped) from RNA-seq data, was performed by Cufflinks (version 2.2.1). To improve the robustness of the estimation of differential expression, the reads mapping to rRNA, tRNA, and non-coding RNA were excluded from the quantification. Cuffdiff (version 2.2.1) was used to normalize the data sets and calculate the fold changes and their statistical significance of two independent biological replicates. To avoid infinite fold changes, a value of one was added to all the FPKM values.	Cells were harvested at 3,000 × g for 5 min at room temperature.	Prepared cDNA libraries were sequenced on Illumina Miseq (75 bp nucleotide paired-end sequence).	The RNA-seq reads were mapped to the S. cerevisiae S288C genome sequence (version R64-1-1, Saccharomyces Genome Database) using TopHat (version 2.0.9). PicardTools (version 1.105, https://broadinstitute.github.io/picard/) were used to sort the mapped reads and remove PCR duplicates.	Total RNA was extracted from each culture with Isogen-LS (Nippon Gene, Tokyo, Japan). RNA integrity was evaluated for quality control with an Agilent Bioanalyzer 2,100 using Agilent RNA 6,000 Nano Kit (Agilent technologies, Santa Clara, CA).	cDNA library preparation was performed using KAPA RNA HyperPrep Kit Illumina Platforms (Kapa Biosystems, Wilmington, MA). Prepared cDNA libraries were validated with an Agilent Bioanalyzer 2,100 using an Agilent High Sensitivity DNA Kit (Agilent Technologies).
+Protocol Parameters
+Protocol Hardware				Illumina MiSeq
+Protocol Software
+Protocol Contact
+
+Term Source Name	EFO	ArrayExpress
+Term Source File	http://www.ebi.ac.uk/efo/	http://www.ebi.ac.uk/arrayexpress/
+Term Source Version	2.38
+
+SDRF File	E-MTAB-8175.sdrf.txt
+Comment [TemplateType]	Cell line - High-throughput sequencing
+Comment [Submitted Name]	Transcriptional responses to isobutanol in Saccharomyces cerevisiae wild type and gln3 deletion strains
+Comment [SecondaryAccession]	ERP116462
+Comment [SequenceDataURI]	http://www.ebi.ac.uk/ena/data/view/ERR3450094-ERR3450101
+Comment [AEExperimentType]	RNA-seq of coding RNA
+Comment[ArrayExpressAccession]	E-MTAB-8175

@@ -1,0 +1,32 @@
+
+#SLURM output
+slurm-*.out
+slurm-*.err
+logs/
+*.log
+#R_Junk
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+#Notebook junk
+.ipynb_checkpoints/
+
+#
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+#container images
+*.sif
+
+#data
+raw_data/
+processed_data/
+
+#Logs
+*.log
+*.tmp
+*.bak
