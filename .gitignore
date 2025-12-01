@@ -25,7 +25,7 @@ Thumbs.db
 #data
 raw_data/
 processed_data/
-
+References/
 #Logs
 *.log
 *.tmp
