@@ -1,0 +1,56 @@
+#!/bin/bash
+#SBATCH --partition=msc_appbio
+#SBATCH --job-name=yeast_alignment
+#SBATCH --output=logs/align_%j.output
+#SBATCH --error=logs/align_%j.error
+#SBATCH --nodes=1
+#SBATCH --time=8:00:00
+#SBATCH --mem=8G
+#SBATCH --ntasks=1
+#SBTACH --cpus-per task =4  #Must match with multi thread aligninger p=4
+
+#Mapping rna-seq reads to reference genome via Tophat
+eval "$(conda shell.bash hook)"
+conda activate isobutanol_paper
+
+#Directory setup
+RAW_DIR="raw_data"
+REF_INDEX="References/yeast_r64"  # The prefix of the Bowtie2 index we built
+OUT_DIR="processed_data/tophat"
+GTF_FILE="References/Saccharomyces_cerevisiae.R64-1-1.106.gtf"
+BAM_DIR="processed_data/bams"
+
+mkdir -p "$OUT_DIR"
+mkdir -p "$BAM_DIR"
+mkdir -p logs
+
+#Code logic
+for file in "$RAW_DIR"/*_1.fastq.gz; do
+filename=$(basename "$file") #Extracting the sample name
+sample_id="${filename%_1.fastq.gz}"
+echo "Processing sample : $sample_id"
+
+#Defining filename
+r1="${RAW_DIR}/${sample_id}_1.fastq.gz"
+r2="${RAW_DIR}/${sample_id}_2.fastq.gz"
+
+#Specific output dir for this result
+sample_out="${OUT_DIR}/${sample_id}"
+mkdir -p "$sample_out"
+
+#Running the Tophat programme
+tophat -p 4 \
+       -G "$GTF_FILE" \
+       -o "$sample_out" \
+      "$REF_INDEX" \
+      "$r1" "$r2"
+echo  "Finished mapping $sample_id"
+
+if [ -f "$sample_out/accepted_hits.bam" ]; then
+        cp "$sample_out/accepted_hits.bam" "$BAM_DIR/${sample_id}.bam"
+        echo "--> Saved consolidated BAM to $BAM_DIR/${sample_id}.bam"
+fi
+
+done
+
+echo "Mapping of all samples completed"
