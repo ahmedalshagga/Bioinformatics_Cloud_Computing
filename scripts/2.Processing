@@ -1,0 +1,57 @@
+#!/bin/bash
+#SBATCH --partition=msc_appbio
+#SBATCH --job-name=bam__processing
+#SBATCH --output=logs/processing_%j.output
+#SBATCH --error=logs/processing_%j.error
+#SBATCH --nodes=1
+#SBATCH --time=08:00:00
+#SBATCH --mem=16G
+#SBATCH --ntasks=1
+
+#Set up enviorment 
+eval "$(conda shell.bash hook)"
+conda activate isobutanol_paper
+
+#Define Directories
+INPUT_DIR="processed_data/bams"
+OUTPUT_DIR="processed_data/processed_bams"
+
+mkdir -p "$OUTPUT_DIR"
+mkdir -p logs
+
+#Code logic
+for bam_file in "$INPUT_DIR"/*.bam; do
+filename=$(basename "$bam_file")
+sample_id="${filename%.bam}"
+
+echo "Proceesing Sample : $sample_id"
+
+#Intermediate files for program
+sorted_bam="${OUTPUT_DIR}/${sample_id}_sorted.bam"
+dedup_bam="${OUTPUT_DIR}/${sample_id}_deduplicated.bam" 
+#shows the deduplicated version, ready for quantification
+metrics_file="${OUTPUT_DIR}/${sample_id}_metrics.txt"
+#allows for log of the data removed post-processing 
+
+
+#Sorting bam files via picard
+picard SortSam \
+I="$bam_file" \
+O="$sorted_bam" \
+SORT_ORDER=coordinate \
+VALIDATION_STRINGENCY=LENIENT
+
+#Removing dupes
+picard MarkDuplicates \
+I="$sorted_bam" \
+O="$dedup_bam" \
+M="$metrics_file" \
+REMOVE_DUPLICATES=true \
+VALIDATION_STRINGENCY=LENIENT
+rm "$sorted_bam" #removing intermediate files needed 
+
+echo "Finished $sample_id processing"
+
+done
+
+echo "All samples processed, located in $OUTPUT_DIR"
