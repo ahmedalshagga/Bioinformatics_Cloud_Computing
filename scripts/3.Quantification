@@ -1,0 +1,46 @@
+#!/bin/bash
+#SBATCH --partition=msc_appbio
+#SBATCH --job-name=cufflinks_quant
+#SBATCH --output=logs/quantification_%j.output
+#SBATCH --error=logs/quantification_%j.error
+#SBATCH --nodes=1
+#SBATCH --time=08:00:00
+#SBATCH --mem=8G
+#SBATCH --ntasks=4
+
+#Initialise conda env
+eval "$(conda shell.bash hook)"
+conda activate isobutanol_paper
+
+#Set up Directories
+INPUT_DIR="processed_data/processed_bams"
+OUTPUT_DIR="processed_data/cufflinks"
+REF_GTF="References/Saccharomyces_cerevisiae.R64-1-1.106.gtf"
+MASK_FILE="References/rRNA_tRNA_mask.gtf"
+
+mkdir -p "$OUTPUT_DIR"
+mkdir -p logs
+
+grep -E 'rRNA|tRNA' "$REF_GTF" > "$MASK_FILE" #Creating mask file as specified in paper
+
+#Code logic
+for bam_file in  "$INPUT_DIR"/*_deduplicated.bam
+do
+filename =$(basename "$bam_file") #Decouple bam suffix
+sample_id="${filename%_deduplicated.bam}"
+echo "Quantifying sample: $sample_id"
+
+sample_out="${OUTPUT_DIR}/${sample_id}"
+mkdir -p  "$sample_out"
+
+#Cufflink's programme
+cufflinks -p 4 \
+-G "$REF_GTF" \
+-M "$MASK_FILE" \
+-o "$sample_out" \
+"$bam_file"
+
+echo "Finished $sample_id"
+done
+
+echo "Quantification step complete"
