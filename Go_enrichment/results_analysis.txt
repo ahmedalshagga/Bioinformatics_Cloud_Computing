@@ -1,0 +1,53 @@
+Data source: Go-term.txt (164 genes from Table S3)
+Tool used: https://geneontology.org/
+
+151 genes were successfully identified, and rich GO enrichment analysis results have been obtained.
+
+Result Interpretation: Completely Consistent with Paper Table S5
+
+1. Tryptophan/Aromatic Amino Acid Metabolism (most significant)
+
+indolalkylamine biosynthetic process: 40.13-fold enrichment, p=9.00E-09
+
+L-tryptophan biosynthetic process: 40.13-fold enrichment, p=9.00E-09
+
+aromatic amino acid family biosynthetic process: 12.21-fold enrichment, p=9.10E-07
+
+✅ Corresponds to "aromatic amino acid-related processes" in the paper
+
+2. Vacuolar Functions
+
+vacuolar acidification: 9.69-fold enrichment, p=5.11E-06
+
+vacuole organization: 3.76-fold enrichment, p=5.96E-04
+
+vacuolar transport: 4.69-fold enrichment, p=5.81E-09
+
+✅ Corresponds to "vacuolar functions" in the paper
+
+3. Ion Homeostasis
+
+intracellular monoatomic cation homeostasis: 3.99-fold enrichment, p=2.01E-06
+
+regulation of intracellular pH: 8.03-fold enrichment, p=1.94E-05
+
+✅ Corresponds to "cellular ion homeostasis" in the paper
+
+4. Pentose Phosphate Pathway
+
+pentose-phosphate shunt: 12.35-fold enrichment, p=2.22E-04
+
+NADPH regeneration: 10.03-fold enrichment, p=5.34E-04
+
+✅ Corresponds to the importance of PPP pathway in the paper
+
+Result Table Explanation:
+
+Column Name	Meaning	Example
+Saccharomyces cerevisiae - REFLIST	Number of genes for this GO term in the background reference list	5 genes involved in tryptophan synthesis
+upload_1	Number of genes for this GO term in your analysis list	5 genes (all hits!)
+upload_1 (expected)	Expected value under random distribution	0.12 (only 0.12 expected by chance)
+fold Enrichment	Enrichment fold (key metric!)	40.13-fold (highly significant!)
+raw P-value	Raw p-value (uncorrected)	9.00E-09 (highly significant)
+FDR	False discovery rate corrected p-value	6.85E-06 (still significant)
+
