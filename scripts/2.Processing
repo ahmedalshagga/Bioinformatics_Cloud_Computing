@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --partition=msc_appbio
-#SBATCH --job-name=bam__processing
+#SBATCH --job-name=bam_processing
 #SBATCH --output=logs/processing_%j.output
 #SBATCH --error=logs/processing_%j.error
 #SBATCH --nodes=1
@@ -24,7 +24,7 @@ for bam_file in "$INPUT_DIR"/*.bam; do
 filename=$(basename "$bam_file")
 sample_id="${filename%.bam}"
 
-echo "Proceesing Sample : $sample_id"
+echo "Processing Sample : $sample_id"
 
 #Intermediate files for program
 sorted_bam="${OUTPUT_DIR}/${sample_id}_sorted.bam"

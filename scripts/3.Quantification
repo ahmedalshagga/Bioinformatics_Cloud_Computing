@@ -15,32 +15,36 @@ conda activate isobutanol_paper
 #Set up Directories
 INPUT_DIR="processed_data/processed_bams"
 OUTPUT_DIR="processed_data/cufflinks"
-REF_GTF="References/Saccharomyces_cerevisiae.R64-1-1.106.gtf"
+REF_ANNOTATION="References/genes.gtf"
 MASK_FILE="References/rRNA_tRNA_mask.gtf"
 
 mkdir -p "$OUTPUT_DIR"
 mkdir -p logs
 
-grep -E 'rRNA|tRNA' "$REF_GTF" > "$MASK_FILE" #Creating mask file as specified in paper
+# Creating mask file (Extracting rRNA and tRNA lines from the annotation file)
+echo "Creating rRNA/tRNA mask file..."
+grep -E 'rRNA|tRNA' "$REF_ANNOTATION" > "$MASK_FILE"
 
 #Code logic
-for bam_file in  "$INPUT_DIR"/*_deduplicated.bam
+for bam_file in "$INPUT_DIR"/*_deduplicated.bam
 do
-filename =$(basename "$bam_file") #Decouple bam suffix
-sample_id="${filename%_deduplicated.bam}"
-echo "Quantifying sample: $sample_id"
+    filename=$(basename "$bam_file") #Decouple bam suffix
+    sample_id="${filename%_deduplicated.bam}"
+    echo "Quantifying sample: $sample_id"
 
-sample_out="${OUTPUT_DIR}/${sample_id}"
-mkdir -p  "$sample_out"
+    sample_out="${OUTPUT_DIR}/${sample_id}"
+    mkdir -p "$sample_out"
 
-#Cufflink's programme
-cufflinks -p 4 \
--G "$REF_GTF" \
--M "$MASK_FILE" \
--o "$sample_out" \
-"$bam_file"
+    #Cufflinks programme
+    # Note: Using -g/-G with GFF files works in newer Cufflinks, 
+    # but strictly GTF is preferred. If this fails, the GFF may need conversion.
+    cufflinks -p 4 \
+    -G "$REF_ANNOTATION" \
+    -M "$MASK_FILE" \
+    -o "$sample_out" \
+    "$bam_file"
 
-echo "Finished $sample_id"
+    echo "Finished $sample_id"
 done
 
 echo "Quantification step complete"

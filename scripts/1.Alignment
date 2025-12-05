@@ -7,7 +7,7 @@
 #SBATCH --time=8:00:00
 #SBATCH --mem=8G
 #SBATCH --ntasks=1
-#SBTACH --cpus-per task =4  #Must match with multi thread aligninger p=4
+#SBATCH --cpus-per-task=4
 
 #Mapping rna-seq reads to reference genome via Tophat
 eval "$(conda shell.bash hook)"
@@ -15,9 +15,9 @@ conda activate isobutanol_paper
 
 #Directory setup
 RAW_DIR="raw_data"
-REF_INDEX="References/yeast_r64"  # The prefix of the Bowtie2 index we built
+REF_INDEX="References/BowtieIndex/genome"
 OUT_DIR="processed_data/tophat"
-GTF_FILE="References/Saccharomyces_cerevisiae.R64-1-1.106.gtf"
+GTF_FILE="References/genes.gtf"
 BAM_DIR="processed_data/bams"
 
 mkdir -p "$OUT_DIR"

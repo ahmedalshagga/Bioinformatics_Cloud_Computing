@@ -2,6 +2,7 @@
 title: "Reproduction of Critical Roles of the Pentose Phosphate Pathway and GLN3 in Isobutanol-Specific Tolerance in Yeast RNA-Seq Analysis"
 format: html
 editor: visual
+---n
 ---
 
 ## Introduction
@@ -30,78 +31,51 @@ Here we load results, validate them against the published data supplied in Suppl
 ```{r}
 group_results_path <- "../processed_data/cuffdiff/gene_exp.diff"
 
-#Loading our results
-our_data <- read.table(group_results_path, header = TRUE, stringsAsFactors = FALSE)
+# 1. Load results
+our_data <- read.delim(group_results_path, header = TRUE, stringsAsFactors = FALSE)
 
 group_results <- our_data %>%
-  filter(status == "OK", sample_1 == "WT_Iso", sample_2 == "gln3_Iso") %>%
-  select(gene_id, locus, log2FC = `log2.fold_change.`, pval = p_value, qval = q_value)
-
-print(paste("Loaded", nrow(group_results), "genes from our analysis."))
+  filter(sample_1 == "gln3_Iso", sample_2 == "WT_Iso") %>% 
+  select(gene_id, locus, log2FC = log2.fold_change., pval = p_value, qval = q_value)
 
 paper_results_path <- "../processed_data/Papers_Results"
 
-#Read the paper table WITHOUT header; keep all rows
+# Read the paper table
 paper_raw <- read.delim(
   paper_results_path,
   header = FALSE,
   stringsAsFactors = FALSE,
   check.names = FALSE
 )
-#Drop the first 3 header rows and build a group_results-like df
-#WT (1.3% Isobutanol) / WT (0%) is in columns V30–V32
+
+# Clean paper data
 paper_dat <- paper_raw %>%
   dplyr::slice(4:n()) %>%
-dplyr::select(-c(17, 21, 25, 29, 33))# rows 4:end = actual data
-# Manually assign column names based on the file structure
+  dplyr::select(-c(17, 21, 25, 29, 33))
+
+# Assign columns
 colnames(paper_dat) <- c(
   "SystematicName", "GeneName", "NameDescription", "Locus",
-  # WT (0%) FPKM
   "WT0_Rep1", "WT0_Rep2", "WT0_mean",
-  # WT (1.3% iso) FPKM
   "WTIso_Rep1", "WTIso_Rep2", "WTIso_mean",
-  # Gln3Δ (0%) FPKM
   "Gln30_Rep1", "Gln30_Rep2", "Gln30_mean",
-  # Gln3Δ (1.3% iso) FPKM
   "Gln3Iso_Rep1", "Gln3Iso_Rep2", "Gln3Iso_mean",
-  # Gln3Δ(1.3) / WT(1.3)
   "Gln3Iso_vs_WTIso_log2FC", "Gln3Iso_vs_WTIso_p", "Gln3Iso_vs_WTIso_q",
-  # Gln3Δ(0) / WT(0)
   "Gln30_vs_WT0_log2FC",     "Gln30_vs_WT0_p",     "Gln30_vs_WT0_q",
-  # Gln3Δ(1.3) / Gln3Δ(0)
   "Gln3Iso_vs_Gln30_log2FC", "Gln3Iso_vs_Gln30_p", "Gln3Iso_vs_Gln30_q",
-  # **WT(1.3) / WT(0)** ← this is the comparison you’re plotting
   "WTIso_vs_WT0_log2FC",     "WTIso_vs_WT0_p",     "WTIso_vs_WT0_q",
-  # Gln3Δ(1.3) / WT(0)
   "Gln3Iso_vs_WT0_log2FC",   "Gln3Iso_vs_WT0_p",   "Gln3Iso_vs_WT0_q"
-)
+) #Inspected files for this
 
-# Build a per-gene table for WT(1.3% iso), WT(0%)
-paper_group <- paper_dat %>%
-  transmute(
-    gene_id   = SystematicName,     
-    gene_name = GeneName,        
-    locus     = Locus,
-    log2FC    = as.numeric(WTIso_vs_WT0_log2FC),
-    pval      = as.numeric(WTIso_vs_WT0_p),
-    qval      = as.numeric(WTIso_vs_WT0_q)
-  )
+print(paste("Loaded", nrow(group_results), "genes from our analysis."))
 
-print(paste("Loaded", nrow(paper_raw), "genes from papers analysis."))
+print(paste("Loaded", nrow(paper_dat), "genes from papers analysis."))
 
 ```
 
 ### Data Validation
 
 To validate the results from our pipeline, we will first compare our log2 fold change values against the authors published values (supplied in Supplementary materials, "Summary_of_RNA_seq_analysis_of_duplicates.txt), via volcano plot visualisation.
-
-While the general biological trends were successfully reproduced, we observed a significant reduction in our total gene count compared to the original study. (3326 vs 6535 gene count) This reduction arises primarily from differences in genome annotation databases: we utilized the conservative Ensembl GTF (\~6,600 verified protein-coding genes), whereas the authors employed the comprehensive SGD annotation (\~13,000 features), leading to this reduction. The application of Cuffdiff in our pipeline reduced this count to \~3,300 genes for statistical testing.
-
-Due to depreciation of the TopHat aligner with the oldest available version being 2.1.0 (compared to the papers 2.0.9), exact replication of the original alignment was not possible.
-
-We also generated this count via explicit filtering of rRNA and tRNA features of the Ensembl GTF, as the authors did not specify their filtering critiera or feature types used leading to difficulty in exact reproduction.
-
-Nonetheless, despite these technical differences, our results show a very close correlation with the results published in the paper and we were able to reproduce the key biological discoveries reported in the paper.
 
 ```{r}
 # Path to the Excel file
@@ -146,15 +120,15 @@ go_id2cat <- c(
 keep_go <- go_all$go_id %in% names(go_id2cat)
 go_all  <- go_all[keep_go, , drop = FALSE]
 
-# Expand comma-separated gene lists and assign category
+# Expand comma-separatedd gene lists and assign categories
 gene2cat_list <- lapply(seq_len(nrow(go_all)), function(i) {
   gid   <- go_all$go_id[i]
   genes <- go_all$genes[i]
 
-  # split comma-separated list
+# split comma-separators
   gvec <- unlist(strsplit(genes, ","))
 
-  # remove non-breaking spaces, then normal trim
+#remove non-breaking spaces, then normal trim
   gvec <- gsub("\u00A0", "", gvec)  # strip NBSP
   gvec <- trimws(gvec)              # strip normal spaces
   gvec <- gvec[gvec != ""]          # drop any empty strings
@@ -176,7 +150,16 @@ gene2cat_list <- lapply(seq_len(nrow(go_all)), function(i) {
 gene2cat <- unique(do.call(rbind, gene2cat_list))
 
 #Attach categories to paper_group (standard gene names)
-#
+# Build paper 5a (Gln3 Iso vs WT Iso)
+paper_group <- paper_dat %>%
+  dplyr::transmute(
+    gene_id   = SystematicName,
+    gene_name = GeneName,
+    locus     = Locus,
+    log2FC    = as.numeric(WTIso_vs_WT0_log2FC),
+    pval      = as.numeric(WTIso_vs_WT0_p),
+    qval      = as.numeric(WTIso_vs_WT0_q)
+  )
 paper_group <- merge(
   paper_group,
   gene2cat,
@@ -203,54 +186,38 @@ gene2cat_sys <- unique(gene2cat_sys[, c("SystematicName", "category")])
 colnames(gene2cat_sys)[colnames(gene2cat_sys) == "SystematicName"] <- "gene_id"
 
 our_5b <- our_data %>%
-  dplyr::filter(
-    status   == "OK",
-    sample_1 == "WT_Iso",
-    sample_2 == "gln3_Iso"
-  ) %>%
+  dplyr::filter(status == "OK", sample_1 == "gln3_Iso", sample_2 == "WT_Iso") %>%
   dplyr::transmute(
     gene_id,
     locus,
-    log2FC = `log2.fold_change.`,
+    log2FC = -log2.fold_change., 
     pval   = p_value,
     qval   = q_value
-  )
-
-# Add categories via gene2cat_sys (SystematicName -> category) if available
-our_5b <- merge(
-  our_5b,
-  gene2cat_sys,
-  by = "gene_id",
-  all.x = TRUE
-)
+  ) %>%
+  merge(gene2cat_sys, by = "gene_id", all.x = TRUE)
 our_5b$category[is.na(our_5b$category)] <- "All other genes"
 
 
-# Build our 5A: WT_NoIso vs WT_Iso 
+# Build our 5A
 our_5a <- our_data %>%
   dplyr::filter(
     status   == "OK",
-    sample_1 == "WT_NoIso",   # WT without isobutanol
-    sample_2 == "WT_Iso"      # WT with isobutanol
+    sample_1 == "WT_NoIso",
+    sample_2 == "WT_Iso"
   ) %>%
   dplyr::transmute(
     gene_id,
     locus,
-    log2FC = `log2.fold_change.`,
+    log2FC = -log2.fold_change., 
     pval   = p_value,
     qval   = q_value
-  )
+  ) %>%
+  merge(gene2cat_sys, by = "gene_id", all.x = TRUE)
 
-our_5a <- merge(
-  our_5a,
-  gene2cat_sys,
-  by = "gene_id",
-  all.x = TRUE
-)
 our_5a$category[is.na(our_5a$category)] <- "All other genes"
 
 
-#Build paper 5B: Gln3Iso / WTIso from paper_dat
+#Build paper 5B
 
 paper_5b <- paper_dat %>%
   dplyr::transmute(
@@ -440,7 +407,7 @@ ggsave(
 
 # Save our Figure 5A
 ggsave(
-  filename = file.path(plots_dir, "Figure_5A_our_pipeline.png"),
+  filename = file.path(plots_dir, "Figure_5A_replicate.png"),
   plot     = fig5a_ours,
   width    = 6,
   height   = 6,
@@ -449,7 +416,7 @@ ggsave(
 
 # Save our Figure 5B
 ggsave(
-  filename = file.path(plots_dir, "Figure_5B_our_pipeline.png"),
+  filename = file.path(plots_dir, "Figure_5B_replicate.png"),
   plot     = fig5b_ours,
   width    = 6,
   height   = 6,

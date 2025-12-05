@@ -7,7 +7,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --mem=16G
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=6 
+#SBATCH --cpus-per-task=4
 
 # Initialize Environment
 eval "$(conda shell.bash hook)"
@@ -16,37 +16,35 @@ conda activate isobutanol_paper
 # Set up Directories
 BAM_DIR="processed_data/processed_bams"
 OUTPUT_DIR="processed_data/cuffdiff"
-REF_GTF="References/Saccharomyces_cerevisiae.R64-1-1.106.gtf"
+REF_GTF="References/genes.gtf"
 MASK_FILE="References/rRNA_tRNA_mask.gtf"
 
 mkdir -p "$OUTPUT_DIR"
 mkdir -p logs
 
-# Set up sample lists (Comma-separated BAM files for replicates)
-# WILD TYPE NO ISOBUTANOL
-WT_NO_ISO="${BAM_DIR}/ERR3450094_deduplicated.bam,${BAM_DIR}/ERR3450095_deduplicated.bam"
+# Creating mask file (with non-coding RNA added for robustness)
+grep -iE 'rRNA|tRNA|snoRNA|snRNA|ncRNA' "$REF_GTF" > "$MASK_FILE"
 
-# WILD TYPE WITH ISOBUTANAL
-WT_ISO="${BAM_DIR}/ERR3450096_deduplicated.bam,${BAM_DIR}/ERR3450097_deduplicated.bam"
+# Files 94-97 had 0 expression of GLN3
+GLN3_NO_ISO="${BAM_DIR}/ERR3450094_deduplicated.bam,${BAM_DIR}/ERR3450095_deduplicated.bam"
+GLN3_ISO="${BAM_DIR}/ERR3450096_deduplicated.bam,${BAM_DIR}/ERR3450097_deduplicated.bam"
 
-# GLN3 DELETION NO ISOBUTANOL
-GLN3_NO_ISO="${BAM_DIR}/ERR3450098_deduplicated.bam,${BAM_DIR}/ERR3450099_deduplicated.bam"
-
-# GLN3 DELETION WITH ISOBUTONAL
-GLN3_ISO="${BAM_DIR}/ERR3450100_deduplicated.bam,${BAM_DIR}/ERR3450101_deduplicated.bam"
+# WILD TYPE (WT)
+# Files 98-101 had expression of GLN3
+WT_NO_ISO="${BAM_DIR}/ERR3450098_deduplicated.bam,${BAM_DIR}/ERR3450099_deduplicated.bam"
+WT_ISO="${BAM_DIR}/ERR3450100_deduplicated.bam,${BAM_DIR}/ERR3450101_deduplicated.bam"
 
 echo "Starting differential expression analysis with cuffdiff"
 
 # Run Cuffdiff
-# Added backslashes (\) to allow multi-line command
 cuffdiff \
-    -p 6 \
+    -p 4 \
     -o "$OUTPUT_DIR" \
-    -L WT_NoIso,WT_Iso,gln3_NoIso,gln3_Iso \
+    -L gln3_NoIso,gln3_Iso,WT_NoIso,WT_Iso \
     -M "$MASK_FILE" \
     --library-type fr-unstranded \
     --no-update-check \
     "$REF_GTF" \
-    "$WT_NO_ISO" "$WT_ISO" "$GLN3_NO_ISO" "$GLN3_ISO"
+    "$GLN3_NO_ISO" "$GLN3_ISO" "$WT_NO_ISO" "$WT_ISO"
 
 echo "Differential Expression Complete, results in $OUTPUT_DIR/gene_exp.diff"

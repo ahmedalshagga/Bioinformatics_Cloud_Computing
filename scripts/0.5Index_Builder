@@ -1,0 +1,65 @@
+#!/bin/bash
+#SBATCH --partition=msc_appbio
+#SBATCH --job-name=build_index
+#SBATCH --output=logs/index_%j.output
+#SBATCH --error=logs/index_%j.error
+#SBATCH --nodes=1
+#SBATCH --time=02:00:00
+#SBATCH --mem=8G
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+
+# Initialize Environment
+eval "$(conda shell.bash hook)"
+conda activate isobutanol_paper
+
+#Set up Directories
+REF_DIR="References"
+ORIGINAL_FASTA="${REF_DIR}/S288C_reference_sequence_R64-1-1_20110203.fsa"
+CLEAN_FASTA="${REF_DIR}/genome_clean.fa"
+INDEX_DIR="${REF_DIR}/BowtieIndex"
+INDEX_PREFIX="${INDEX_DIR}/genome"
+ORIGINAL_GFF="${REF_DIR}/saccharomyces_cerevisiae_R64-1-1_20110208.gff"
+NEW_GTF="${REF_DIR}/genes.gtf"
+
+#Rename chromosomes in fasta
+# This aligns the NCBI names (ref|NC_001133|) with SGD names (chrI)
+
+echo "Renaming chromosomes in FASTA..."
+if [ -f "$ORIGINAL_FASTA" ]; then
+    sed 's/^>ref|NC_001133|.*/>chrI/' "$ORIGINAL_FASTA" | \
+    sed 's/^>ref|NC_001134|.*/>chrII/' | \
+    sed 's/^>ref|NC_001135|.*/>chrIII/' | \
+    sed 's/^>ref|NC_001136|.*/>chrIV/' | \
+    sed 's/^>ref|NC_001137|.*/>chrV/' | \
+    sed 's/^>ref|NC_001138|.*/>chrVI/' | \
+    sed 's/^>ref|NC_001139|.*/>chrVII/' | \
+    sed 's/^>ref|NC_001140|.*/>chrVIII/' | \
+    sed 's/^>ref|NC_001141|.*/>chrIX/' | \
+    sed 's/^>ref|NC_001142|.*/>chrX/' | \
+    sed 's/^>ref|NC_001143|.*/>chrXI/' | \
+    sed 's/^>ref|NC_001144|.*/>chrXII/' | \
+    sed 's/^>ref|NC_001145|.*/>chrXIII/' | \
+    sed 's/^>ref|NC_001146|.*/>chrXIV/' | \
+    sed 's/^>ref|NC_001147|.*/>chrXV/' | \
+    sed 's/^>ref|NC_001148|.*/>chrXVI/' | \
+    sed 's/^>ref|NC_001224|.*/>chrmt/' | \
+    sed 's/^>ref|NC_001398|.*/>2-micron/' > "$CLEAN_FASTA"
+
+    echo "Created clean FASTA at $CLEAN_FASTA"
+
+#Build Index
+
+echo "Building Bowtie2 index..."
+mkdir -p "$INDEX_DIR"
+bowtie2-build --threads 4 "$CLEAN_FASTA" "$INDEX_PREFIX"
+echo "Index building complete."
+
+#Conversion GFF to GTF
+# Tophat requires GTF format. We use gffread to convert.
+echo "Converting GFF to GTF..."
+
+    gffread "$ORIGINAL_GFF" -T -o "$NEW_GTF"
+    echo "Created GTF file at $NEW_GTF"
+
+echo "All reference preparation tasks completed successfully."
