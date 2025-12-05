@@ -1,9 +1,10 @@
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+#!/software/spackages_v0_21_prod/apps/linux-ubuntu22.04-zen2/gcc-13.2.0/r-4.5.1-fcdalrrhty67okjue6qglrbsjqnswlnx/bin/Rscript
+#knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
 # Load required libraries
-install.packages("ggrepel")
-install.packages("BiocManager")
-BiocManager::install("EnhancedVolcano")
+#install.packages("ggrepel")
+#install.packages("BiocManager")
+#BiocManager::install("EnhancedVolcano")
 library(dplyr)
 library(ggplot2)
 library(readr)
@@ -11,7 +12,7 @@ library(ggrepel)
 library(EnhancedVolcano)
 library(readxl)
 
-group_results_path <- "../processed_data/cuffdiff/gene_exp.diff"
+group_results_path <- "/processed_data/cuffdiff/gene_exp.diff"
 
 # 1. Load results
 our_data <- read.delim(group_results_path, header = TRUE, stringsAsFactors = FALSE)
@@ -20,7 +21,7 @@ group_results <- our_data %>%
   filter(sample_1 == "gln3_Iso", sample_2 == "WT_Iso") %>% 
   select(gene_id, locus, log2FC = log2.fold_change., pval = p_value, qval = q_value)
 
-paper_results_path <- "../processed_data/Papers_Results"
+paper_results_path <- "/processed_data/Papers_Results"
 
 # Read the paper table
 paper_raw <- read.delim(
