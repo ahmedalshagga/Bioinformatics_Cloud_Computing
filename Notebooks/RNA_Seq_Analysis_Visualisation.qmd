@@ -208,7 +208,7 @@ our_5a <- our_data %>%
   dplyr::transmute(
     gene_id,
     locus,
-    log2FC = -log2.fold_change., 
+    log2FC = log2.fold_change., 
     pval   = p_value,
     qval   = q_value
   ) %>%
@@ -307,42 +307,55 @@ volcano_plot_category <- function(df,
     "Membrane lipid biosynthesis"            = "#ffd66b"
   )
 
-  ## 5. Plot
-  ggplot(df, aes(x = log2FC, y = neg_log10_p)) +
+ggplot(df, aes(x = log2FC, y = neg_log10_p)) +
     geom_point(aes(colour = category_plot),
                size = point_size, alpha = 0.9) +
+    
+    
     geom_vline(xintercept = c(-lfc_thresh, lfc_thresh),
                linetype = "dashed", colour = "white", linewidth = 0.4) +
     geom_hline(yintercept = -log10(p_thresh),
                linetype = "dashed", colour = "white", linewidth = 0.4) +
     scale_x_continuous(limits = c(-10, 10)) +
     scale_y_continuous(limits = c(0, 5)) +
+    
     scale_color_manual(
       values = category_cols,
       drop   = FALSE,
       name   = NULL
     ) +
+
+    guides(colour = guide_legend(nrow = 3, byrow = TRUE)) +
+    
     labs(
       title = title,
       x = expression(Log[2] ~ "fold change"),
       y = expression(-Log[10] ~ "p-value")
     ) +
+    
     theme_minimal(base_size = 12) +
     theme(
-      plot.background  = element_rect(fill = "black", colour = NA),
-      panel.background = element_rect(fill = "black", colour = NA),
-      panel.grid.major = element_line(colour = "#444444", linewidth = 0.3),
-      panel.grid.minor = element_line(colour = "#333333", linewidth = 0.2),
-      axis.text        = element_text(colour = "white"),
-      axis.title       = element_text(colour = "white"),
-      plot.title       = element_text(colour = "white", hjust = 0.5),
+      plot.background   = element_rect(fill = "black", colour = NA),
+      panel.background  = element_rect(fill = "black", colour = NA),
+      panel.grid.major  = element_line(colour = "#444444", linewidth = 0.3),
+      panel.grid.minor  = element_line(colour = "#333333", linewidth = 0.2),
+      
+      axis.text         = element_text(colour = "white"),
+      axis.title        = element_text(colour = "white"),
+      
+
+      plot.title        = element_text(colour = "white", hjust = 0.5, margin = margin(b = 10)),
+      
       legend.background = element_rect(fill = "black", colour = NA),
-      legend.key       = element_rect(fill = "black", colour = NA),
-      legend.text      = element_text(colour = "white"),
-      legend.position  = "bottom"
+      legend.key        = element_rect(fill = "black", colour = NA),
+      
+
+      legend.text       = element_text(colour = "white", size = 10), 
+      legend.position   = "bottom",
+      legend.margin     = margin(t = 10), 
+      plot.margin       = margin(20, 20, 20, 20) 
     )
 }
-
 ```
 
 ## Plotting a volcano plot

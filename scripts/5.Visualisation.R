@@ -185,7 +185,7 @@ our_5a <- our_data %>%
   dplyr::transmute(
     gene_id,
     locus,
-    log2FC = -log2.fold_change., 
+    log2FC = log2.fold_change., 
     pval   = p_value,
     qval   = q_value
   ) %>%
@@ -282,7 +282,6 @@ volcano_plot_category <- function(df,
     "Membrane lipid biosynthesis"            = "#ffd66b"
   )
 
-  ## 5. Plot
 ggplot(df, aes(x = log2FC, y = neg_log10_p)) +
     geom_point(aes(colour = category_plot),
                size = point_size, alpha = 0.9) +
@@ -332,7 +331,6 @@ ggplot(df, aes(x = log2FC, y = neg_log10_p)) +
       plot.margin       = margin(20, 20, 20, 20) 
     )
 }
-```
 
 fig5a_paper <- volcano_plot_category(
   paper_group,
