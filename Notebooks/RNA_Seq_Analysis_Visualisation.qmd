@@ -24,7 +24,7 @@ library(readxl)
 
 This notebook documents the analysis and visualization of RNA-seq data from the reproduction of Kuroda et al (2019). The pipeline consisted of alignment (TopHat), quantification (Cufflinks), and differentrial expression analysis (Cuffdiff) within the HPC cluster environment.
 
-Here we load results, validate them against the published data supplied in Supplementary Info and visualize the key findings
+Here we load results, validate them against the published data supplied in Supplementary Info and visualize the key findings.
 
 ### Loading Data
 
@@ -73,9 +73,25 @@ print(paste("Loaded", nrow(paper_dat), "genes from papers analysis."))
 
 ```
 
+We were able to load the same region of genes \~6,000 indicating our RNA-seq analysis was able to mimic theres quite well in terms of output. The discrepancy between them could be attributed to software drift between versions of Tophat (we utilised 2.1.0 as opposed to their 2.0.9 due to depreciation of the software previous models leading to its lack of availability) or perhaps differences in masking techniques in our methodology, due to insufficient documentation available to us.
+
 ### Data Validation
 
 To validate the results from our pipeline, we will first compare our log2 fold change values against the authors published values (supplied in Supplementary materials, "Summary_of_RNA_seq_analysis_of_duplicates.txt), via volcano plot visualisation.
+
+To check that our pipeline reproduces the biology reported in the paper, we next align our results with the authors’ Gene Ontology (GO) annotation and recreate their volcano plots.
+
+The paper highlights four biological processes in Figure 5:
+
+-   Cell wall organisation or biogenesis\
+
+-   Cellular amino acid metabolic process\
+
+-   Glycolysis\
+
+-   Membrane lipid biosynthesis
+
+The classification of each gene in these processes is was defined in Supplementary Table S7 (sheets S7A–S7H) of the paper. We read all eight sheets ( via readxl), keep the GO term and associated gene list columns, and stack them into a single table to allow for mapping of both our data and the papers published results to see if our "reproduction" was accurate.
 
 ```{r}
 # Path to the Excel file
@@ -240,6 +256,16 @@ paper_5b$category[is.na(paper_5b$category)] <- "All other genes"
 
 ```
 
+### Volcano plot Function
+
+To make the comparisons easier and ensure that both our results and the authors’ results are plotted in exactly the same way, we define a small helper function `volcano_plot_category()`, 
+The features of the graph are as follow:
+  - x-axis: log₂ fold change  
+  - y-axis: –log₁₀(p-value)  
+  - vertical dashed lines at |log₂FC| = 1  
+  - a horizontal dashed line at p = 0.05  
+Colored points are selected via category so that the four highlighted biological processes can be visually traced across the plot in the same manner as the original paper. 
+
 ```{r}
 volcano_plot_category <- function(df,
                                   title      = "WT (1.3% Isobutanol) / WT (0% Isobutanol)",
@@ -359,8 +385,11 @@ ggplot(df, aes(x = log2FC, y = neg_log10_p)) +
 ```
 
 ## Plotting a volcano plot
-
-The function above maps the groupings based on the metadata found in Supplementary information and plots both the papers data and ours according to the same parameters to show
+We now generate volcano plots for each of the two contrasts using both
+the published statistics and our own RNA-seq CuttDiff output. As all
+plots are constructed with the same helper function, any differences
+we see should primarily reflect differences in the underlying
+statistics, not plotting discrepancies.
 
 ```{r}
 fig5a_paper <- volcano_plot_category(
@@ -391,8 +420,14 @@ fig5b_ours <- volcano_plot_category(
 print(fig5b_ours)
 ```
 
+<<<<<<< HEAD
 
 #### Saving Plots
+=======
+For Figure A: our replicated plot closely matches the authors original, in terms of shape. density of significant genes above thep-value threshold and the mapping of the categories, showing that we were able to successfully replicate their findings.
+
+For Figure B: The consistency was also seen here between our group and their published data. The distribution of significant hits between categories is very similiar showing that our upstream mapping and more broadly our quantification and differential expression analysis faithfully reproduced the authors, allowing us to come to the same conclusion as their original paper.
+>>>>>>> d05309e2a9d233ea0ba0161084b98bb95f513cd9
 
 ```{r}
 # Create output directory 
