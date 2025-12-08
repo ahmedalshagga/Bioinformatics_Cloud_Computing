@@ -117,12 +117,6 @@ fig5a_data <- our_data %>%
     sample_2 == "WT_Iso"
   )
 
-fig5a_data <- our_data %>%
-  filter(
-    status == "OK",
-    sample_1 == "WT_NoIso",
-    sample_2 == "WT_Iso"
-  )
 fig5a_up <- fig5a_data %>%
   filter(log2.fold_change. > 1, q_value < 0.05) %>%
   pull(gene_id)
