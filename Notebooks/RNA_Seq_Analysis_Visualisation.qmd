@@ -104,7 +104,7 @@ isobutanol). We then extract genes belonging to these four key processes
 **from our own enrichment results** to color the volcano plots, allowing 
 direct visual comparison with the paper's findings. This approach validates 
 that our pipeline not only reproduces the statistical results but also 
-independently identifies the same biological mechanisms.
+independently confirms the significance of the same biological mechanisms.
 
 ```{r}
 universe_list <- unique(our_data$gene_id[our_data$status == "OK"])
