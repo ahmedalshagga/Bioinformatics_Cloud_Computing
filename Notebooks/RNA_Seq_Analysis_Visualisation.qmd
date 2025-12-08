@@ -278,7 +278,10 @@ get_term_data <- function(ego_object, condition_name) {
   ego_object@result %>%
     filter(ID %in% key_terms$ID) %>%
     left_join(key_terms, by = "ID") %>%
-    select(Category, p.adjust, Count, GeneRatio)
+    select(Category, p.adjust, Count, GeneRatio) %>%
+    mutate(Condition = condition_name) %>%
+    relocate(Condition)
+  
 }
   
 summary_table <- bind_rows(
