@@ -14,11 +14,11 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 install.packages("ggrepel")
 install.packages("BiocManager")
 BiocManager::install("EnhancedVolcano")
-BiocManager::install("clusterProfiler")
-BiocManager::install("org.Sc.sgd.db")
+#BiocManager::install("clusterProfiler") Loading these packages on the HPC may not be possible
+#BiocManager::install("org.Sc.sgd.db") Loading these packages on the HPC May not be possible
 BiocManager::install("enrichplot")
-library(clusterProfiler)
-library(org.Sc.sgd.db)
+#library(clusterProfiler)
+#library(org.Sc.sgd.db)
 library(dplyr)
 library(ggplot2)
 library(readr)
@@ -577,6 +577,13 @@ cor_lfc <- with(comparison[valid, ], cor(paper_log2FC, our_log2FC))
 cat(sprintf("Log2FC correlation (finite only): %.3f\n", cor_lfc))
 #Returns 0.852
 ```
+### Figure 7 (Located in Supplementary)
+
+
+
+
+
+
 #### Saving Plots
 For Figure A: our replicated plot closely matches the authors original, in terms of shape. density of significant genes above thep-value threshold and the mapping of the categories, showing that we were able to successfully replicate their findings.
 
