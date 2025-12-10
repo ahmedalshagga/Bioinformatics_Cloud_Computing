@@ -1,0 +1,428 @@
+#!/software/spackages_v0_21_prod/apps/linux-ubuntu22.04-zen2/gcc-13.2.0/r-4.5.1-fcdalrrhty67okjue6qglrbsjqnswlnx/bin/Rscript
+#knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Load required libraries
+#install.packages("ggrepel")
+#install.packages("BiocManager")
+BiocManager::install("EnhancedVolcano")
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(ggrepel)
+library(EnhancedVolcano)
+library(readxl)
+
+group_results_path <- "../processed_data/cuffdiff/gene_exp.diff"
+
+# 1. Load results
+our_data <- read.delim(group_results_path, header = TRUE, stringsAsFactors = FALSE)
+
+group_results <- our_data %>%
+  filter(sample_1 == "gln3_NoIso", sample_2 == "gln3_Iso") %>% 
+  select(gene_id, locus, log2FC = log2.fold_change., pval = p_value, qval = q_value)
+
+paper_results_path <- "../processed_data/Papers_Results"
+
+# Read the paper table
+paper_raw <- read.delim(
+  paper_results_path,
+  header = FALSE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+# Clean paper data
+paper_dat <- paper_raw %>%
+  dplyr::slice(4:n()) %>%
+  dplyr::select(-c(17, 21, 25, 29, 33))
+
+# Assign columns
+colnames(paper_dat) <- c(
+  "SystematicName", "GeneName", "NameDescription", "Locus",
+  "WT0_Rep1", "WT0_Rep2", "WT0_mean",
+  "WTIso_Rep1", "WTIso_Rep2", "WTIso_mean",
+  "Gln30_Rep1", "Gln30_Rep2", "Gln30_mean",
+  "Gln3Iso_Rep1", "Gln3Iso_Rep2", "Gln3Iso_mean",
+  "Gln3Iso_vs_WTIso_log2FC", "Gln3Iso_vs_WTIso_p", "Gln3Iso_vs_WTIso_q",
+  "Gln30_vs_WT0_log2FC",     "Gln30_vs_WT0_p",     "Gln30_vs_WT0_q",
+  "Gln3Iso_vs_Gln30_log2FC", "Gln3Iso_vs_Gln30_p", "Gln3Iso_vs_Gln30_q",
+  "WTIso_vs_WT0_log2FC",     "WTIso_vs_WT0_p",     "WTIso_vs_WT0_q",
+  "Gln3Iso_vs_WT0_log2FC",   "Gln3Iso_vs_WT0_p",   "Gln3Iso_vs_WT0_q"
+) #Inspected files for this
+
+print(paste("Loaded", nrow(group_results), "genes from our analysis."))
+
+print(paste("Loaded", nrow(paper_dat), "genes from papers analysis."))
+
+
+# Path to the Excel file
+path_s7 <- "../meta_data/1-s2.0-S2405471219303825-mmc4.xlsx"
+
+# Table 7A-H
+sheets_to_use <- paste0("Table S7", LETTERS[1:8])
+
+# Read columns A and B from all sheets and stack them
+go_list <- lapply(sheets_to_use, function(sh) {
+  x <- read_excel(
+    path_s7,
+    sheet     = sh,
+    skip      = 8,   # row 9 becomes header
+    col_names = TRUE
+  )
+  x <- as.data.frame(x, stringsAsFactors = FALSE)
+  x <- x[, 1:2, drop = FALSE]      # keep first two columns (GO term, genes)
+  names(x) <- c("go_term", "genes")  # force consistent names
+  x$sheet <- sh                   # remember which sheet it came from
+  x
+})
+
+go_all <- do.call(rbind, go_list)
+
+# Drop rows with NA terms/genes
+keep <- !is.na(go_all$go_term) & !is.na(go_all$genes)
+go_all <- go_all[keep, , drop = FALSE]
+
+# Extract GO ID, e.g. "glycolysis (GO:0005975)" -> "GO:0005975"
+go_all$go_id <- sub(".*(GO:[0-9]+).*", "\\1", go_all$go_term)
+
+# Map GO IDs to the 4 categories for the volcano legend
+go_id2cat <- c(
+  "GO:0071554" = "Cell wall organization or biogenesis",
+  "GO:0006520" = "Cellular amino acid metabolic process",
+  "GO:0005975" = "Glycolysis",                   
+  "GO:0006629" = "Membrane lipid biosynthesis"   
+)
+
+# Keep only rows whose GO ID is one of these
+keep_go <- go_all$go_id %in% names(go_id2cat)
+go_all  <- go_all[keep_go, , drop = FALSE]
+
+# Expand comma-separated gene lists and assign categories
+gene2cat_list <- lapply(seq_len(nrow(go_all)), function(i) {
+  gid   <- go_all$go_id[i]
+  genes <- go_all$genes[i]
+  
+  # split comma-separators
+  gvec <- unlist(strsplit(genes, ","))
+  
+  #remove non-breaking spaces, then normal trim
+  gvec <- gsub("\u00A0", "", gvec)  # strip NBSP
+  gvec <- trimws(gvec)              # strip normal spaces
+  gvec <- gvec[gvec != ""]          # drop any empty strings
+  
+  # category from GO ID (fallback to "All other genes" just in case)
+  cat <- if (!is.na(gid) && gid %in% names(go_id2cat)) {
+    go_id2cat[[gid]]
+  } else {
+    "All other genes"
+  }
+  
+  data.frame(
+    gene     = gvec,
+    category = rep(cat, length(gvec)),
+    stringsAsFactors = FALSE
+  )
+})
+
+gene2cat <- unique(do.call(rbind, gene2cat_list))
+
+#Attach categories to paper_group (standard gene names)
+# Build paper 7a (gln3 Iso vs gln3 No Iso)
+paper_group <- paper_dat %>%
+  dplyr::transmute(
+    gene_id   = SystematicName,
+    gene_name = GeneName,
+    locus     = Locus,
+    log2FC    = as.numeric(Gln3Iso_vs_Gln30_log2FC),
+    pval      = as.numeric(Gln3Iso_vs_Gln30_p),
+    qval      = as.numeric(Gln3Iso_vs_Gln30_q)
+  )
+paper_group <- merge(
+  paper_group,
+  gene2cat,
+  by.x = "gene_name",
+  by.y = "gene",
+  all.x = TRUE
+)
+
+paper_group$category[is.na(paper_group$category)] <- "All other genes"
+print(table(paper_group$category))
+
+# Build GeneName <-> SystematicName mapping from paper_dat 
+id_map <- unique(paper_dat[, c("SystematicName", "GeneName")])
+
+gene2cat_sys <- merge(
+  id_map,
+  gene2cat,
+  by.x = "GeneName",  # from paper_dat (standard name)
+  by.y = "gene",      # from gene2cat
+  all.y = TRUE        # keep all genes in gene2cat
+)
+
+gene2cat_sys <- unique(gene2cat_sys[, c("SystematicName", "category")])
+colnames(gene2cat_sys)[colnames(gene2cat_sys) == "SystematicName"] <- "gene_id"
+
+our_7b <- our_data %>%
+  dplyr::filter(status == "OK", sample_1 == "gln3_NoIso", sample_2 == "WT_NoIso") %>%
+  dplyr::transmute(
+    gene_id,
+    locus,
+    log2FC = -log2.fold_change., 
+    pval   = p_value,
+    qval   = q_value
+  ) %>%
+  merge(gene2cat_sys, by = "gene_id", all.x = TRUE)
+our_7b$category[is.na(our_7b$category)] <- "All other genes"
+
+
+# Build our 7A
+our_7a <- our_data %>%
+  dplyr::filter(
+    status   == "OK",
+    sample_1 == "gln3_NoIso",
+    sample_2 == "gln3_Iso"
+  ) %>%
+  dplyr::transmute(
+    gene_id,
+    locus,
+    log2FC = log2.fold_change., 
+    pval   = p_value,
+    qval   = q_value
+  ) %>%
+  merge(gene2cat_sys, by = "gene_id", all.x = TRUE)
+
+our_7a$category[is.na(our_7a$category)] <- "All other genes"
+
+
+#Build paper 7B
+
+paper_7b <- paper_dat %>%
+  dplyr::transmute(
+    gene_id   = SystematicName,
+    gene_name = GeneName,
+    locus     = Locus,
+    log2FC    = as.numeric(Gln30_vs_WT0_log2FC),
+    pval      = as.numeric(Gln30_vs_WT0_p),
+    qval      = as.numeric(Gln30_vs_WT0_q)
+  )
+
+paper_7b <- merge(
+  paper_7b,
+  gene2cat,
+  by.x = "gene_name",
+  by.y = "gene",
+  all.x = TRUE
+)
+paper_7b$category[is.na(paper_7b$category)] <- "All other genes"
+
+
+volcano_plot_category <- function(df,
+                                  title      = "WT (1.3% Isobutanol) / WT (0% Isobutanol)",
+                                  lfc_thresh = 1,
+                                  p_thresh   = 0.05,
+                                  point_size = 0.5) {
+  
+  #unique column name constraint
+  if (any(duplicated(names(df)))) {
+    names(df) <- make.unique(names(df))
+  }
+  
+  #Filter and compute -log10(p)
+  keep <- !is.na(df$log2FC) & !is.na(df$pval)
+  df   <- df[keep, , drop = FALSE]
+  
+  df$neg_log10_p <- -log10(df$pval)
+  
+  
+  cat_col <- NULL
+  if ("category.1" %in% names(df)) {
+    cat_col <- "category.1" 
+  } else if ("category" %in% names(df)) {
+    cat_col <- "category"
+  }
+  
+  if (is.null(cat_col)) {
+    cat_vec <- rep("All other genes", nrow(df))
+  } else {
+    cat_vec <- df[[cat_col]]
+  }
+  
+  # 3. Clean / normalise category labels and collapse to 5 labels according to papers graph
+  cat_vec[is.na(cat_vec)] <- "All other genes"
+  cat_vec <- trimws(cat_vec)
+  low     <- tolower(cat_vec)
+  
+  cat_clean <- ifelse(low == "cell wall organization or biogenesis",
+                      "Cell wall organization or biogenesis",
+                      ifelse(low == "cellular amino acid metabolic process",
+                             "Cellular amino acid metabolic process",
+                             ifelse(low == "glycolysis",
+                                    "Glycolysis",
+                                    ifelse(low == "membrane lipid biosynthesis",
+                                           "Membrane lipid biosynthesis",
+                                           "All other genes"))))
+  
+  df$category_plot <- factor(
+    cat_clean,
+    levels = c(
+      "All other genes",
+      "Cell wall organization or biogenesis",
+      "Cellular amino acid metabolic process",
+      "Glycolysis",
+      "Membrane lipid biosynthesis"
+    )
+  )
+  
+  ## 4. Colour palette
+  category_cols <- c(
+    "All other genes"                        = "grey60",
+    "Cell wall organization or biogenesis"   = "#1f77b4",
+    "Cellular amino acid metabolic process"  = "#ff9ea6",
+    "Glycolysis"                             = "#8fb5ff",
+    "Membrane lipid biosynthesis"            = "#ffd66b"
+  )
+  
+  ggplot(df, aes(x = log2FC, y = neg_log10_p)) +
+    geom_point(aes(colour = category_plot),
+               size = point_size, alpha = 0.9) +
+    
+    
+    geom_vline(xintercept = c(-lfc_thresh, lfc_thresh),
+               linetype = "dashed", colour = "white", linewidth = 0.4) +
+    geom_hline(yintercept = -log10(p_thresh),
+               linetype = "dashed", colour = "white", linewidth = 0.4) +
+    scale_x_continuous(limits = c(-10, 10)) +
+    scale_y_continuous(limits = c(0, 5)) +
+    
+    scale_color_manual(
+      values = category_cols,
+      drop   = FALSE,
+      name   = NULL
+    ) +
+    
+    guides(colour = guide_legend(nrow = 3, byrow = TRUE)) +
+    
+    labs(
+      title = title,
+      x = expression(Log[2] ~ "fold change"),
+      y = expression(-Log[10] ~ "p-value")
+    ) +
+    
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.background   = element_rect(fill = "black", colour = NA),
+      panel.background  = element_rect(fill = "black", colour = NA),
+      panel.grid.major  = element_line(colour = "#444444", linewidth = 0.3),
+      panel.grid.minor  = element_line(colour = "#333333", linewidth = 0.2),
+      
+      axis.text         = element_text(colour = "white"),
+      axis.title        = element_text(colour = "white"),
+      
+      
+      plot.title        = element_text(colour = "white", hjust = 0.5, margin = margin(b = 10)),
+      
+      legend.background = element_rect(fill = "black", colour = NA),
+      legend.key        = element_rect(fill = "black", colour = NA),
+      
+      
+      legend.text       = element_text(colour = "white", size = 10), 
+      legend.position   = "bottom",
+      legend.margin     = margin(t = 10), 
+      plot.margin       = margin(20, 20, 20, 20) 
+    )
+}
+
+fig7a_paper <- volcano_plot_category(
+  paper_group,
+  title = "Gln3 (1.3% isobutanol) / Gln3 (0% isobutanol) – paper data"
+)
+print(fig7a_paper)
+
+# Paper 7B: gln3Δ(1.3) / WT(1.3) from paper_dat
+fig7b_paper <- volcano_plot_category(
+  paper_7b,
+  title = "gln3Δ (0% isobutanol) / WT (0% isobutanol) – paper data"
+)
+print(fig7b_paper)
+
+#Our 7A: Gln3_Iso / Gln3_NoIso from gene_exp.diff 
+fig7a_ours <- volcano_plot_category(
+  our_7a,
+  title = "Gln3 (1.3% isobutanol) / Gln3 (0% isobutanol) – our pipeline"
+)
+print(fig7a_ours)
+
+# Our 7B: Gln3_Iso / WT_Iso from gene_exp.diff
+fig7b_ours <- volcano_plot_category(
+  our_7b,
+  title = "gln3Δ (1.3% isobutanol) / WT (1.3% isobutanol) – our pipeline"
+)
+print(fig7b_ours)
+
+#correlation analysis
+comparison_S7 <- merge( paper_7b %>% select(gene_id, paper_log2FC_S7 = log2FC, paper_pval_S7 = pval), our_7b %>% select(gene_id, our_log2FC_S7 = log2FC, our_pval_S7 = pval), by = "gene_id" )
+
+correlation_plot_s7 <-ggplot(comparison_S7, aes(x = paper_log2FC_S7, y = our_log2FC_S7)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Paper vs Our pipeline log2FC",
+    x = "Paper log2FC",
+    y = "Our pipeline log2FC"
+  ) +
+  theme_minimal()
+
+#Computing Coefficent correlation
+valid   <- is.finite(comparison_S7$paper_log2FC_S7) & is.finite(comparison_S7$our_log2FC_S7)
+cor_lfc <- with(comparison_S7[valid, ], cor(paper_log2FC_S7, our_log2FC_S7))
+cat(sprintf("Log2FC correlation (finite only): %.3f\n", cor_lfc))
+#returned value = 0.844
+# Create output directory 
+plots_dir <- "../plots"
+if (!dir.exists(plots_dir)) {
+  dir.create(plots_dir, recursive = TRUE)
+}
+
+# Save papers Figure 7A
+ggsave(
+  filename = file.path(plots_dir, "Figure_7A_paper.png"),
+  plot     = fig7a_paper,
+  width    = 6,
+  height   = 6,
+  dpi      = 300
+)
+
+# Save papers Figure 7B
+ggsave(
+  filename = file.path(plots_dir, "Figure_7B_paper.png"),
+  plot     = fig7b_paper,
+  width    = 6,
+  height   = 6,
+  dpi      = 300
+)
+
+# Save our Figure 7A
+ggsave(
+  filename = file.path(plots_dir, "Figure_7A_replicate.png"),
+  plot     = fig7a_ours,
+  width    = 6,
+  height   = 6,
+  dpi      = 300
+)
+
+# Save our Figure 7B
+ggsave(
+  filename = file.path(plots_dir, "Figure_7B_replicate.png"),
+  plot     = fig7b_ours,
+  width    = 6,
+  height   = 6,
+  dpi      = 300
+)
+#saving correlation analysis for Figure S7 data
+ggsave(
+  filename = file.path(plots_dir, "Correlation_Analysis_for_S7.png"),
+  plot = correlation_plot_s7,
+  width = 6,
+  height = 6,
+  dpi = 300
+)
