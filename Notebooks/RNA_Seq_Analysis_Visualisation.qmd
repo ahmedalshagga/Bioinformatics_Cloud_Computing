@@ -14,11 +14,6 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 install.packages("ggrepel")
 install.packages("BiocManager")
 BiocManager::install("EnhancedVolcano")
-#BiocManager::install("clusterProfiler") Loading these packages on the HPC may not be possible
-#BiocManager::install("org.Sc.sgd.db") Loading these packages on the HPC May not be possible
-BiocManager::install("enrichplot")
-#library(clusterProfiler)
-#library(org.Sc.sgd.db)
 library(dplyr)
 library(ggplot2)
 library(readr)
@@ -28,10 +23,6 @@ library(readxl)
 ```
 
 This notebook documents the analysis and visualization of RNA-seq data from the reproduction of Kuroda et al (2019). The pipeline consisted of alignment (TopHat), quantification (Cufflinks), and differentrial expression analysis (Cuffdiff) within the HPC cluster environment.
-To validate the results from our pipeline, we compare our log2 fold change 
-values against the authors' published values (supplied in Supplementary 
-materials, "Summary_of_RNA_seq_analysis_of_duplicates.txt) via volcano plot 
-visualization.
 
 Here we load results, validate them against the published data supplied in Supplementary Info and visualize the key findings.
 
@@ -84,223 +75,29 @@ print(paste("Loaded", nrow(paper_dat), "genes from papers analysis."))
 
 We were able to load the same region of genes \~6,000 indicating our RNA-seq analysis was able to mimic theres quite well in terms of output. The discrepancy between them could be attributed to software drift between versions of Tophat (we utilised 2.1.0 as opposed to their 2.0.9 due to depreciation of the software previous models leading to its lack of availability) or perhaps differences in masking techniques in our methodology, due to insufficient documentation available to us.
 
-### GO ENRICHMENT (OUR DATA)
-To check that our pipeline reproduces the biologoical  reported in the paper, 
-we perform **independent Gene Ontology (GO) enrichment analysis** on our 
-significant genes using the clusterProfiler package. This tests whether the 
-same biological processes are enriched in our data as the authors found in 
-theirs.
+### Data Validation
 
-The paper highlighted four key biological processes in outlined in Figure 5:
+To validate the results from our pipeline, we will first compare our log2 fold change values against the authors published values (supplied in Supplementary materials, "Summary_of_RNA_seq_analysis_of_duplicates.txt), via volcano plot visualisation.
 
-- Cell wall organization or biogenesis (GO:0071554)
-- Cellular amino acid metabolic process (GO:0006520)
-- Glycolysis (GO:0005975)
-- Membrane lipid biosynthesis (GO:0006629)
+To check that our pipeline reproduces the biology reported in the paper, we next align our results with the authors’ Gene Ontology (GO) annotation and recreate their volcano plots.
 
-We consequently ran GO enrichment separately for upregulated and downregulated genes in 
-both Figure 5A (WT response to isobutanol) and Figure 5B (gln3Δ vs WT in 
-isobutanol). We then extract genes belonging to these four key processes 
-**from our own enrichment results** to color the volcano plots, allowing 
-direct visual comparison with the paper's findings. This approach validates 
-that our pipeline not only reproduces the statistical results but also 
-independently confirms the significance of the same biological mechanisms.
+The paper highlights four biological processes in Figure 5:
+
+-   Cell wall organisation or biogenesis\
+
+-   Cellular amino acid metabolic process\
+
+-   Glycolysis\
+
+-   Membrane lipid biosynthesis
+
+The classification of each gene in these processes is was defined in Supplementary Table S7 (sheets S7A–S7H) of the paper. We read all eight sheets ( via readxl), keep the GO term and associated gene list columns, and stack them into a single table to allow for mapping of both our data and the papers published results to see if our "reproduction" was accurate.
 
 ```{r}
-universe_list <- unique(our_data$gene_id[our_data$status == "OK"])
-
-# Extract comparison
-fig5a_data <- our_data %>%
-  filter(
-    status == "OK",
-    sample_1 == "WT_NoIso",
-    sample_2 == "WT_Iso"
-  )
-
-fig5a_up <- fig5a_data %>%
-  filter(log2.fold_change. > 1, q_value < 0.05) %>%
-  pull(gene_id)
-
-fig5a_down <- fig5a_data %>%
-  filter(log2.fold_change. < -1, q_value < 0.05) %>%
-  pull(gene_id)
-
-ego_5a_up <- enrichGO(
-  gene          = fig5a_up,
-  universe      = universe_list,
-  OrgDb         = org.Sc.sgd.db,
-  keyType       = "ORF",
-  ont           = "BP",
-  pAdjustMethod = "BH",
-  pvalueCutoff  = 0.05,
-  qvalueCutoff  = 0.05
-)
-
-ego_5a_down <- enrichGO(
-  gene          = fig5a_down,
-  universe      = universe_list,
-  OrgDb         = org.Sc.sgd.db,
-  keyType       = "ORF",
-  ont           = "BP",
-  pAdjustMethod = "BH",
-  pvalueCutoff  = 0.05,
-  qvalueCutoff  = 0.05
-)
-
-fig5b_data <- our_data %>%
-  filter(
-    status == "OK",
-    sample_1 == "gln3_Iso",
-    sample_2 == "WT_Iso"
-  )
-fig5b_up <- fig5b_data %>%
-  filter(log2.fold_change. < -1, q_value < 0.05) %>%
-  pull(gene_id)
-
-fig5b_down <- fig5b_data %>%
-  filter(log2.fold_change. > 1, q_value < 0.05) %>%
-  pull(gene_id)
-
-ego_5b_up <- enrichGO(
-  gene          = fig5b_up,
-  universe      = universe_list,
-  OrgDb         = org.Sc.sgd.db,
-  keyType       = "ORF",
-  ont           = "BP",
-  pAdjustMethod = "BH",
-  pvalueCutoff  = 0.05,
-  qvalueCutoff  = 0.05
-)
-
-ego_5b_down <- enrichGO(
-  gene          = fig5b_down,
-  universe      = universe_list,
-  OrgDb         = org.Sc.sgd.db,
-  keyType       = "ORF",
-  ont           = "BP",
-  pAdjustMethod = "BH",
-  pvalueCutoff  = 0.05,
-  qvalueCutoff  = 0.05
-)
-
-extract_gene_categories <- function(ego_result, category_name) {
-  if (is.null(ego_result) || nrow(ego_result@result) == 0) {
-    return(data.frame(gene_id = character(), category = character()))
-  }
-
-gene_list <- lapply(seq_len(nrow(ego_result@result)), function(i) {
-    go_id <- ego_result@result$ID[i]
-    go_desc <- ego_result@result$Description[i]
-    genes <- unlist(strsplit(ego_result@result$geneID[i], "/"))
-    
-    data.frame(
-      gene_id = genes,
-      go_id = go_id,
-      go_description = go_desc,
-      stringsAsFactors = FALSE
-    )
-  })
-  
-  gene_df <- do.call(rbind, gene_list)
-  return(gene_df)
-}
-
-key_go_terms <- c(
-  "GO:0071554" = "Cell wall organization or biogenesis",
-  "GO:0006520" = "Cellular amino acid metabolic process",
-  "GO:0005975" = "Glycolysis",
-  "GO:0006629" = "Membrane lipid biosynthesis"
-)
-map_to_key_categories <- function(ego_up, ego_down) {
-  
-  # Extract all genes from enrichment results
-  genes_up <- extract_gene_categories(ego_up, "up")
-  genes_down <- extract_gene_categories(ego_down, "down")
-  
-  # Combine
-  all_genes <- rbind(genes_up, genes_down)
-  
-  # Filter to only the 4 key GO terms
-  key_genes <- all_genes %>%
-    filter(go_id %in% names(key_go_terms)) %>%
-    mutate(category = key_go_terms[go_id]) %>%
-    select(gene_id, category) %>%
-    distinct()
-  
-  return(key_genes)
-}
-
-our_5a_categories <- map_to_key_categories(ego_5a_up, ego_5a_down)
-our_5b_categories <- map_to_key_categories(ego_5b_up, ego_5b_down)
-
-our_5a <- fig5a_data %>%
-  transmute(
-    gene_id,
-    locus,
-    log2FC = log2.fold_change.,
-    pval = p_value,
-    qval = q_value
-  ) %>%
-  left_join(our_5a_categories, by = "gene_id")
-
-our_5a$category[is.na(our_5a$category)] <- "All other genes"
-
-our_5b <- fig5b_data %>%
-  transmute(
-    gene_id,
-    locus,
-    log2FC = -log2.fold_change.,  # Flip sign
-    pval = p_value,
-    qval = q_value
-  ) %>%
-  left_join(our_5b_categories, by = "gene_id")
-
-our_5b$category[is.na(our_5b$category)] <- "All other genes"
-
-```
-### Checking Results of Our GO Enrichment 
-```{r}
-key_terms <- data.frame(
-  ID = c("GO:0071554", "GO:0006520", "GO:0005975", "GO:0006629"),
-  Category = c(
-    "Cell wall organization or biogenesis",
-    "Cellular amino acid metabolic process",
-    "Glycolysis",
-    "Membrane lipid biosynthesis"
-  ),
-  stringsAsFactors = FALSE
-)
-
-#Helper function
-get_term_data <- function(ego_object, condition_name) {
-  if (is.null(ego_object) || nrow(ego_object@result) == 0) return(NULL)
-
-  ego_object@result %>%
-    filter(ID %in% key_terms$ID) %>%
-    left_join(key_terms, by = "ID") %>%
-    select(Category, p.adjust, Count, GeneRatio) %>%
-    mutate(Condition = condition_name) %>%
-    relocate(Condition)
-  
-}
-  
-summary_table <- bind_rows(
-  get_term_data(ego_5a_up,   "Fig 5A - Upregulated"),
-  get_term_data(ego_5a_down, "Fig 5A - Downregulated"),
-  get_term_data(ego_5b_up,   "Fig 5B - Upregulated"),
-  get_term_data(ego_5b_down, "Fig 5B - Downregulated")
-)
-print(summary_table)
-```
-Our independent GO enrichment analysis successfully reproduces the core biological findings reported by Kuroda et al, finding cellular amino acid metabolism strongly upregulated in wild type cells under stress. Alongisde downregulation of glylcosis and cell wall organisation and validation of the GLN3 rescue by identifying significant differentrialexpressions of amino acid metabolism and glyolcsis between the gln3 mutant cells and the wild type. We were unable to find membrane lipid biosyntehsis enriched at a significant level, which could be attribute to the papers authors implementing a custom list of specific genes (noted in Figure S7), as opposed to using the GO database definition.
-### Mapping Papers GO Enrichment Data 
-By using the authors' published values (supplied in Supplementary materials, "Summary_of_RNA_seq_analysis_of_duplicates.txt), we were able to map their categories (Supplementary Table S6) to their data to allow for reproduction of their graphs, allowing us to visualize the exact gene sets they highlighted—such as those for glycolysis and amino acid biosynthesis—and establish a clear baseline for the expected transcriptomic shifts. This reconstruction serves as a reference point for validating our own workflow: by comparing the paper's volcano plots (colored using their Table S7 categories) against our own plots (colored using our independent GO enrichment results), we can visually assess whether our pipeline identifies the same biological processes.
-
-```{r}
-# Path to the supllementary materials, excel file containing data in Table 7 which contained their GO enrichment
+# Path to the Excel file
 path_s7 <- "../meta_data/1-s2.0-S2405471219303825-mmc4.xlsx"
 
-# Table S7A-H
+# Table 7A-H
 sheets_to_use <- paste0("Table S7", LETTERS[1:8])
 
 # Read columns A and B from all sheets and stack them
@@ -314,7 +111,7 @@ go_list <- lapply(sheets_to_use, function(sh) {
   x <- as.data.frame(x, stringsAsFactors = FALSE)
   x <- x[, 1:2, drop = FALSE]      # keep first two columns (GO term, genes)
   names(x) <- c("go_term", "genes")  # force consistent names
-  x$sheet <- sh                      # remember which sheet it came from
+  x$sheet <- sh                   # remember which sheet it came from
   x
 })
 
@@ -335,30 +132,30 @@ go_id2cat <- c(
   "GO:0006629" = "Membrane lipid biosynthesis"   
 )
 
-# Keep only rows whose GO ID is one of these 4 key categories
+# Keep only rows whose GO ID is one of these
 keep_go <- go_all$go_id %in% names(go_id2cat)
 go_all  <- go_all[keep_go, , drop = FALSE]
 
-# Expand comma-separated gene lists and assign categories
+# Expand comma-separatedd gene lists and assign categories
 gene2cat_list <- lapply(seq_len(nrow(go_all)), function(i) {
   gid   <- go_all$go_id[i]
   genes <- go_all$genes[i]
-  
-  # Split comma-separated genes
+
+# split comma-separators
   gvec <- unlist(strsplit(genes, ","))
-  
-  # Remove non-breaking spaces, then normal trim
+
+#remove non-breaking spaces, then normal trim
   gvec <- gsub("\u00A0", "", gvec)  # strip NBSP
   gvec <- trimws(gvec)              # strip normal spaces
   gvec <- gvec[gvec != ""]          # drop any empty strings
-  
-  # Get category from GO ID
+
+  # category from GO ID (fallback to "All other genes" just in case)
   cat <- if (!is.na(gid) && gid %in% names(go_id2cat)) {
     go_id2cat[[gid]]
   } else {
     "All other genes"
   }
-  
+
   data.frame(
     gene     = gvec,
     category = rep(cat, length(gvec)),
@@ -368,38 +165,466 @@ gene2cat_list <- lapply(seq_len(nrow(go_all)), function(i) {
 
 gene2cat <- unique(do.call(rbind, gene2cat_list))
 
-print(table(gene2cat$category))
-
-
-# Paper Figure 5A: WT+Iso vs WT
-paper_5a <- paper_dat %>%
-  transmute(
+#Attach categories to paper_group (standard gene names)
+# Build paper 5a (Gln3 Iso vs WT Iso)
+paper_group <- paper_dat %>%
+  dplyr::transmute(
     gene_id   = SystematicName,
     gene_name = GeneName,
     locus     = Locus,
     log2FC    = as.numeric(WTIso_vs_WT0_log2FC),
     pval      = as.numeric(WTIso_vs_WT0_p),
     qval      = as.numeric(WTIso_vs_WT0_q)
+  )
+paper_group <- merge(
+  paper_group,
+  gene2cat,
+  by.x = "gene_name",
+  by.y = "gene",
+  all.x = TRUE
+)
+
+paper_group$category[is.na(paper_group$category)] <- "All other genes"
+print(table(paper_group$category))
+
+# Build GeneName <-> SystematicName mapping from paper_dat 
+id_map <- unique(paper_dat[, c("SystematicName", "GeneName")])
+
+gene2cat_sys <- merge(
+  id_map,
+  gene2cat,
+  by.x = "GeneName",  # from paper_dat (standard name)
+  by.y = "gene",      # from gene2cat
+  all.y = TRUE        # keep all genes in gene2cat
+)
+
+gene2cat_sys <- unique(gene2cat_sys[, c("SystematicName", "category")])
+colnames(gene2cat_sys)[colnames(gene2cat_sys) == "SystematicName"] <- "gene_id"
+
+our_5b <- our_data %>%
+  dplyr::filter(status == "OK", sample_1 == "gln3_Iso", sample_2 == "WT_Iso") %>%
+  dplyr::transmute(
+    gene_id,
+    locus,
+    log2FC = -log2.fold_change., 
+    pval   = p_value,
+    qval   = q_value
   ) %>%
-  left_join(gene2cat, by = c("gene_name" = "gene"))
+  merge(gene2cat_sys, by = "gene_id", all.x = TRUE)
+our_5b$category[is.na(our_5b$category)] <- "All other genes"
 
-paper_5a$category[is.na(paper_5a$category)] <- "All other genes"
 
-# Paper Figure 5B: gln3Δ+Iso vs WT+Iso
+# Build our 5A
+our_5a <- our_data %>%
+  dplyr::filter(
+    status   == "OK",
+    sample_1 == "WT_NoIso",
+    sample_2 == "WT_Iso"
+  ) %>%
+  dplyr::transmute(
+    gene_id,
+    locus,
+    log2FC = log2.fold_change., 
+    pval   = p_value,
+    qval   = q_value
+  ) %>%
+  merge(gene2cat_sys, by = "gene_id", all.x = TRUE)
+
+our_5a$category[is.na(our_5a$category)] <- "All other genes"
+
+
+#Build paper 5B
+
 paper_5b <- paper_dat %>%
-  transmute(
+  dplyr::transmute(
     gene_id   = SystematicName,
     gene_name = GeneName,
     locus     = Locus,
     log2FC    = as.numeric(Gln3Iso_vs_WTIso_log2FC),
     pval      = as.numeric(Gln3Iso_vs_WTIso_p),
     qval      = as.numeric(Gln3Iso_vs_WTIso_q)
-  ) %>%
-  left_join(gene2cat, by = c("gene_name" = "gene"))
+  )
 
+paper_5b <- merge(
+  paper_5b,
+  gene2cat,
+  by.x = "gene_name",
+  by.y = "gene",
+  all.x = TRUE
+)
 paper_5b$category[is.na(paper_5b$category)] <- "All other genes"
 
 ```
+
+
+###RNA-SEQ pipeline
+
+This pipeline does a series of analyses, including quality control, index construction, read alignment, data processing, quantification, and RNA sequencing–related downstream analyses.
+
+All of thesw scripts are called in a master script at the root project directory called RNA_Seq.Analysis.sh
+
+Script 1 quality control:
+
+```{bash}
+#Preliminary Quality Check
+
+#Initalising conda enviroment
+eval "$(conda shell.bash hook)"
+conda activate Quality_control_Env
+
+#Defining Direc
+raw_dir="raw_data"
+FASTQC_OUT="processed_data/fastqc"
+MULTIQC_OUT="processed_data/multiqc"
+
+
+#Create Output Directories
+echo "--> Creating output directories..."
+mkdir -p "$FASTQC_OUT"
+mkdir -p "$MULTIQC_OUT"
+
+#Running the Quality Check
+echo "Running FASTQC files in $raw_dir..."
+fastqc "$raw_dir"/*.fastq.gz -o "$FASTQC_OUT"
+
+echo "Running MultiQC aggregation..."
+multiqc "$FASTQC_OUT" -o "$MULTIQC_OUT"
+
+#  Cleanup of  fastqc folder since MultiQC has aggregated the data
+echo "--> Deleting raw FastQC files to save disk space..."
+rm -rf "$FASTQC_OUT"/*.zip
+
+echo "Report available in $MULTIQC_OUT/multiqc_report.html"
+```
+
+This script was used to perform preliminary quality assessment of the raw sequencing reads. The workflow first initialized a dedicated Conda environment containing all required quality-control tools. The script defined the directories for the raw FASTQ files and the output folders used to store the FastQC and MultiQC results. FastQC was then executed on all .fastq.gz files in the raw-data directory to evaluate sequencing quality metrics, including per-base quality scores, GC content, duplication levels, and adapter contamination.
+
+Following individual FastQC analyses, MultiQC was run to aggregate all FastQC outputs into a single comprehensive report, allowing efficient visualization and comparison of read-quality statistics across all samples. After aggregation, the temporary FastQC .zip files were removed to reduce disk usage. The final quality-control summary was saved as an HTML report generated by MultiQC.
+
+
+```{bash}
+#!/bin/bash
+#SBATCH --partition=msc_appbio
+#SBATCH --job-name=build_index
+#SBATCH --output=logs/index_%j.output
+#SBATCH --error=logs/index_%j.error
+#SBATCH --nodes=1
+#SBATCH --time=02:00:00
+#SBATCH --mem=8G
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+
+# Initialize Environment
+eval "$(conda shell.bash hook)"
+conda activate isobutanol_paper
+
+#Set up Directories
+REF_DIR="References"
+ORIGINAL_FASTA="${REF_DIR}/S288C_reference_sequence_R64-1-1_20110203.fsa"
+CLEAN_FASTA="${REF_DIR}/genome_clean.fa"
+INDEX_DIR="${REF_DIR}/BowtieIndex"
+INDEX_PREFIX="${INDEX_DIR}/genome"
+ORIGINAL_GFF="${REF_DIR}/saccharomyces_cerevisiae_R64-1-1_20110208.gff"
+NEW_GTF="${REF_DIR}/genes.gtf"
+
+#Rename chromosomes in fasta
+# This aligns the NCBI names (ref|NC_001133|) with SGD names (chrI)
+
+echo "Renaming chromosomes in FASTA..."
+if [ -f "$ORIGINAL_FASTA" ]; then
+    sed 's/^>ref|NC_001133|.*/>chrI/' "$ORIGINAL_FASTA" | \
+    sed 's/^>ref|NC_001134|.*/>chrII/' | \
+    sed 's/^>ref|NC_001135|.*/>chrIII/' | \
+    sed 's/^>ref|NC_001136|.*/>chrIV/' | \
+    sed 's/^>ref|NC_001137|.*/>chrV/' | \
+    sed 's/^>ref|NC_001138|.*/>chrVI/' | \
+    sed 's/^>ref|NC_001139|.*/>chrVII/' | \
+    sed 's/^>ref|NC_001140|.*/>chrVIII/' | \
+    sed 's/^>ref|NC_001141|.*/>chrIX/' | \
+    sed 's/^>ref|NC_001142|.*/>chrX/' | \
+    sed 's/^>ref|NC_001143|.*/>chrXI/' | \
+    sed 's/^>ref|NC_001144|.*/>chrXII/' | \
+    sed 's/^>ref|NC_001145|.*/>chrXIII/' | \
+    sed 's/^>ref|NC_001146|.*/>chrXIV/' | \
+    sed 's/^>ref|NC_001147|.*/>chrXV/' | \
+    sed 's/^>ref|NC_001148|.*/>chrXVI/' | \
+    sed 's/^>ref|NC_001224|.*/>chrmt/' | \
+    sed 's/^>ref|NC_001398|.*/>2-micron/' > "$CLEAN_FASTA"
+
+    echo "Created clean FASTA at $CLEAN_FASTA"
+
+#Build Index
+
+echo "Building Bowtie2 index..."
+mkdir -p "$INDEX_DIR"
+bowtie2-build --threads 4 "$CLEAN_FASTA" "$INDEX_PREFIX"
+echo "Index building complete."
+
+#Conversion GFF to GTF
+# Tophat requires GTF format. We use gffread to convert.
+echo "Converting GFF to GTF..."
+
+    gffread "$ORIGINAL_GFF" -T -o "$NEW_GTF"
+    echo "Created GTF file at $NEW_GTF"
+
+echo "All reference preparation tasks completed successfully."
+```
+
+The script initialized a dedicated Conda environment containing Bowtie2 and other required tools.
+
+First, the script defined the directory structure and input files, including the original FASTA genome sequence and the corresponding GFF annotation file. Chromosome identifiers in the FASTA file were then standardized to match the Saccharomyces Genome Database (SGD) naming convention (e.g., chrI, chrII, …, chrXVI, and chrmt). This renaming step was performed using a series of sed commands and ensured consistent chromosome naming between the genome FASTA and gene-annotation files.
+
+After generating the cleaned FASTA file, a Bowtie2 index was constructed using bowtie2-build with four CPU threads. The resulting index files were stored in a dedicated index directory for downstream alignment.
+
+Finally, the script converted the original GFF annotation into GTF format using gffread, as some RNA-seq downstream tools require GTF rather than GFF. The resulting genes.gtf file and the Bowtie2 index together formed the complete reference package used for subsequent read alignment and quantification.
+
+```{bash}
+#!/bin/bash
+#SBATCH --partition=msc_appbio
+#SBATCH --job-name=yeast_alignment
+#SBATCH --output=logs/align_%j.output
+#SBATCH --error=logs/align_%j.error
+#SBATCH --nodes=1
+#SBATCH --time=8:00:00
+#SBATCH --mem=8G
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+
+#Mapping rna-seq reads to reference genome via Tophat
+eval "$(conda shell.bash hook)"
+conda activate isobutanol_paper
+
+#Directory setup
+RAW_DIR="raw_data"
+REF_INDEX="References/BowtieIndex/genome"
+OUT_DIR="processed_data/tophat"
+GTF_FILE="References/genes.gtf"
+BAM_DIR="processed_data/bams"
+
+mkdir -p "$OUT_DIR"
+mkdir -p "$BAM_DIR"
+mkdir -p logs
+
+#Code logic
+for file in "$RAW_DIR"/*_1.fastq.gz; do
+filename=$(basename "$file") #Extracting the sample name
+sample_id="${filename%_1.fastq.gz}"
+echo "Processing sample : $sample_id"
+
+#Defining filename
+r1="${RAW_DIR}/${sample_id}_1.fastq.gz"
+r2="${RAW_DIR}/${sample_id}_2.fastq.gz"
+
+#Specific output dir for this result
+sample_out="${OUT_DIR}/${sample_id}"
+mkdir -p "$sample_out"
+
+#Running the Tophat programme
+tophat -p 4 \
+       -G "$GTF_FILE" \
+       -o "$sample_out" \
+      "$REF_INDEX" \
+      "$r1" "$r2"
+echo  "Finished mapping $sample_id"
+
+if [ -f "$sample_out/accepted_hits.bam" ]; then
+        cp "$sample_out/accepted_hits.bam" "$BAM_DIR/${sample_id}.bam"
+        echo "--> Saved consolidated BAM to $BAM_DIR/${sample_id}.bam"
+fi
+
+done
+
+echo "Mapping of all samples completed"
+```
+Also，The script initialized a dedicated Conda environment containing Tophat and its dependencies. And, defined the input directories for raw FASTQ files, the Bowtie2 reference index, the gene-annotation GTF file, and the output directories for Tophat results and final BAM files. It then iterated through all paired-end read files in the raw-data directory by detecting files ending in _1.fastq.gz. For each sample, the script extracted the sample ID, located the corresponding read 1 and read 2 files, and created a sample-specific output folder.
+
+Tophat was executed for each sample using four CPU threads, with the GTF annotation file provided to guide spliced alignment. The cleaned reference genome index generated earlier was used as the alignment target. Upon completion, Tophat produced the standard alignment file accepted_hits.bam.
+
+If the BAM file was successfully generated, it was copied into a centralized directory (processed_data/bams/) using the sample’s name, ensuring consistent file organization for downstream analyses. This loop continued until all samples were processed, after which the script reported the completion of the alignment step.
+
+```{bash}
+#!/bin/bash
+#SBATCH --partition=msc_appbio
+#SBATCH --job-name=bam_processing
+#SBATCH --output=logs/processing_%j.output
+#SBATCH --error=logs/processing_%j.error
+#SBATCH --nodes=1
+#SBATCH --time=08:00:00
+#SBATCH --mem=16G
+#SBATCH --ntasks=1
+
+#Set up enviorment 
+eval "$(conda shell.bash hook)"
+conda activate isobutanol_paper
+
+#Define Directories
+INPUT_DIR="processed_data/bams"
+OUTPUT_DIR="processed_data/processed_bams"
+
+mkdir -p "$OUTPUT_DIR"
+mkdir -p logs
+
+#Code logic
+for bam_file in "$INPUT_DIR"/*.bam; do
+filename=$(basename "$bam_file")
+sample_id="${filename%.bam}"
+
+echo "Processing Sample : $sample_id"
+
+#Intermediate files for program
+sorted_bam="${OUTPUT_DIR}/${sample_id}_sorted.bam"
+dedup_bam="${OUTPUT_DIR}/${sample_id}_deduplicated.bam" 
+#shows the deduplicated version, ready for quantification
+metrics_file="${OUTPUT_DIR}/${sample_id}_metrics.txt"
+#allows for log of the data removed post-processing 
+
+
+#Sorting bam files via picard
+picard SortSam \
+I="$bam_file" \
+O="$sorted_bam" \
+SORT_ORDER=coordinate \
+VALIDATION_STRINGENCY=LENIENT
+
+#Removing dupes
+picard MarkDuplicates \
+I="$sorted_bam" \
+O="$dedup_bam" \
+M="$metrics_file" \
+REMOVE_DUPLICATES=true \
+VALIDATION_STRINGENCY=LENIENT
+rm "$sorted_bam" #removing intermediate files needed 
+
+echo "Finished $sample_id processing"
+
+done
+
+echo "All samples processed, located in $OUTPUT_DIR"
+```
+
+This script was used to perform standardized post-alignment processing of RNA-seq BAM files prior to downstream quantification. Job parameters were defined through the scheduler, and a Conda environment containing Picard was activated at runtime.
+
+The script specified directories for input BAM files (generated from Tophat) and output processed files. For each BAM file within the input directory, the script extracted the sample identifier and generated filenames for sorted BAMs, deduplicated BAMs, and Picard metrics logs.
+
+Each BAM file first underwent coordinate sorting using Picard's SortSam tool, producing a sorted BAM file suitable for further processing. Following sorting, duplicate reads were identified and removed using MarkDuplicates with the REMOVE_DUPLICATES=true option. A metrics file was generated for each sample to document duplication rates and provide traceability for removed reads. After deduplication, the intermediate sorted BAM file was deleted to conserve storage space.
+
+The final deduplicated BAM files, suitable for quantification or other downstream analyses, were saved in the designated output directory. The script iterated over all input samples and reported completion upon processing all available BAM files.
+
+```{bash}
+#!/bin/bash
+#SBATCH --partition=msc_appbio
+#SBATCH --job-name=cufflinks_quant
+#SBATCH --output=logs/quantification_%j.output
+#SBATCH --error=logs/quantification_%j.error
+#SBATCH --nodes=1
+#SBATCH --time=08:00:00
+#SBATCH --mem=8G
+#SBATCH --ntasks=4
+
+#Initialise conda env
+eval "$(conda shell.bash hook)"
+conda activate isobutanol_paper
+
+#Set up Directories
+INPUT_DIR="processed_data/processed_bams"
+OUTPUT_DIR="processed_data/cufflinks"
+REF_ANNOTATION="References/genes.gtf"
+MASK_FILE="References/rRNA_tRNA_mask.gtf"
+
+mkdir -p "$OUTPUT_DIR"
+mkdir -p logs
+
+# Creating mask file (Extracting rRNA and tRNA lines from the annotation file)
+echo "Creating rRNA/tRNA mask file..."
+grep -E 'rRNA|tRNA' "$REF_ANNOTATION" > "$MASK_FILE"
+
+#Code logic
+for bam_file in "$INPUT_DIR"/*_deduplicated.bam
+do
+    filename=$(basename "$bam_file") #Decouple bam suffix
+    sample_id="${filename%_deduplicated.bam}"
+    echo "Quantifying sample: $sample_id"
+
+    sample_out="${OUTPUT_DIR}/${sample_id}"
+    mkdir -p "$sample_out"
+
+    #Cufflinks programme
+    # Note: Using -g/-G with GFF files works in newer Cufflinks, 
+    # but strictly GTF is preferred. If this fails, the GFF may need conversion.
+    cufflinks -p 4 \
+    -G "$REF_ANNOTATION" \
+    -M "$MASK_FILE" \
+    -o "$sample_out" \
+    "$bam_file"
+
+    echo "Finished $sample_id"
+done
+
+echo "Quantification step complete"
+```
+
+
+The script was used to generate transcript abundance estimates from the processed RNA-seq BAM files.  The Cufflinks suite was activated prior to quantification.
+
+The script began by defining directory paths for the input BAM files, the output quantification directory, the reference GTF annotation file, and a mask file used to exclude non-coding RNA features. A mask file containing rRNA and tRNA annotations was created by extracting all corresponding entries from the reference GTF using a regular-expression search. This mask file prevents highly abundant rRNA/tRNA reads from inflating transcript-expression estimates.
+
+For each deduplicated BAM file, the script extracted the sample identifier and created a dedicated output directory. Cufflinks was then executed with four threads, using the reference GTF file to guide transcript assembly and quantification. The -G option constrained the analysis to known gene models, and the -M option applied the rRNA/tRNA mask to exclude unwanted alignments. The resulting transcript FPKM estimates, along with associated tracking and model files, were written to the sample-specific output directory.
+
+```{bash}
+#!/bin/bash
+#SBATCH --partition=msc_appbio
+#SBATCH --job-name=cuffdiff_de
+#SBATCH --output=logs/DE_analysis_%j.output
+#SBATCH --error=logs/DE_analysis_%j.error
+#SBATCH --nodes=1
+#SBATCH --time=12:00:00
+#SBATCH --mem=16G
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+
+# Initialize Environment
+eval "$(conda shell.bash hook)"
+conda activate isobutanol_paper
+
+# Set up Directories
+BAM_DIR="processed_data/processed_bams"
+OUTPUT_DIR="processed_data/cuffdiff"
+REF_GTF="References/genes.gtf"
+MASK_FILE="References/rRNA_tRNA_mask.gtf"
+
+mkdir -p "$OUTPUT_DIR"
+mkdir -p logs
+
+# Creating mask file (with non-coding RNA added for robustness)
+grep -iE 'rRNA|tRNA|snoRNA|snRNA|ncRNA' "$REF_GTF" > "$MASK_FILE"
+
+# Files 94-97 had 0 expression of GLN3
+GLN3_NO_ISO="${BAM_DIR}/ERR3450094_deduplicated.bam,${BAM_DIR}/ERR3450095_deduplicated.bam"
+GLN3_ISO="${BAM_DIR}/ERR3450096_deduplicated.bam,${BAM_DIR}/ERR3450097_deduplicated.bam"
+
+# WILD TYPE (WT)
+# Files 98-101 had expression of GLN3
+WT_NO_ISO="${BAM_DIR}/ERR3450098_deduplicated.bam,${BAM_DIR}/ERR3450099_deduplicated.bam"
+WT_ISO="${BAM_DIR}/ERR3450100_deduplicated.bam,${BAM_DIR}/ERR3450101_deduplicated.bam"
+
+echo "Starting differential expression analysis with cuffdiff"
+
+# Run Cuffdiff
+cuffdiff \
+    -p 4 \
+    -o "$OUTPUT_DIR" \
+    -L gln3_NoIso,gln3_Iso,WT_NoIso,WT_Iso \
+    -M "$MASK_FILE" \
+    --library-type fr-unstranded \
+    --no-update-check \
+    "$REF_GTF" \
+    "$GLN3_NO_ISO" "$GLN3_ISO" "$WT_NO_ISO" "$WT_ISO"
+
+echo "Differential Expression Complete, results in $OUTPUT_DIR/gene_exp.diff"
+```
+
+Differential expression analysis was conducted using Cuffdiff. Aligned, deduplicated BAM files were organized into four biological conditions (GLN3_NoIso, GLN3_Iso, WT_NoIso, WT_Iso), each containing replicates. To prevent inflated expression estimates from highly abundant non-coding RNAs, a mask file containing rRNA, tRNA, snoRNA, snRNA, and ncRNA annotations was generated and applied during analysis. Cuffdiff was run in reference-guided mode using the curated GTF annotation and an fr-unstranded library setting. The resulting differential expression statistics were reported in the default output files, including gene_exp.diff.
+
 
 
 
@@ -507,28 +732,27 @@ ggplot(df, aes(x = log2FC, y = neg_log10_p)) +
     ) +
     
     theme_minimal(base_size = 12) +
-  theme(
-    plot.background   = element_rect(fill = "white", colour = NA),
-      panel.background  = element_rect(fill = "white", colour = NA),
+    theme(
+      plot.background   = element_rect(fill = "black", colour = NA),
+      panel.background  = element_rect(fill = "black", colour = NA),
+      panel.grid.major  = element_line(colour = "#444444", linewidth = 0.3),
+      panel.grid.minor  = element_line(colour = "#333333", linewidth = 0.2),
       
-      # Light grey grid lines (standard for publications)
-      panel.grid.major  = element_line(colour = "grey92", linewidth = 0.3),
-      panel.grid.minor  = element_line(colour = "grey96", linewidth = 0.2),
+      axis.text         = element_text(colour = "white"),
+      axis.title        = element_text(colour = "white"),
       
-      # Black Text
-      axis.text         = element_text(colour = "black"),
-      axis.title        = element_text(colour = "black"),
-      plot.title        = element_text(colour = "black", hjust = 0.5, margin = margin(b = 10)),
+
+      plot.title        = element_text(colour = "white", hjust = 0.5, margin = margin(b = 10)),
       
-      # Legend Styling
-      legend.background = element_rect(fill = "white", colour = NA),
-      legend.key        = element_rect(fill = "white", colour = NA),
-      legend.text       = element_text(colour = "black", size = 10),
+      legend.background = element_rect(fill = "black", colour = NA),
+      legend.key        = element_rect(fill = "black", colour = NA),
       
+
+      legend.text       = element_text(colour = "white", size = 10), 
       legend.position   = "bottom",
-      legend.margin     = margin(t = 10),
-      plot.margin       = margin(20, 20, 20, 20)
-  )
+      legend.margin     = margin(t = 10), 
+      plot.margin       = margin(20, 20, 20, 20) 
+    )
 }
 ```
 
@@ -540,6 +764,19 @@ we see should primarily reflect differences in the underlying
 statistics, not plotting discrepancies.
 
 ```{r}
+fig5a_paper <- volcano_plot_category(
+  paper_group,
+  title = "WT (1.3% isobutanol) / WT (0% isobutanol) – paper data"
+)
+print(fig5a_paper)
+
+# Paper 5B: gln3Δ(1.3) / WT(1.3) from paper_dat
+fig5b_paper <- volcano_plot_category(
+  paper_5b,
+  title = "gln3Δ (1.3% isobutanol) / WT (1.3% isobutanol) – paper data"
+)
+print(fig5b_paper)
+
 #Our 5A: WT_NoIso / WT_Iso from gene_exp.diff 
 fig5a_ours <- volcano_plot_category(
   our_5a,
@@ -555,36 +792,6 @@ fig5b_ours <- volcano_plot_category(
 print(fig5b_ours)
 ```
 
-### Verification of of correlation between results
-To be able to quantatively verify the accuracy of our reproduction of the paper, we performed a correlation analysis between our log2 fold changes reported by Kurdo et a. and those generated by our pipeline, We merged data sets via genes and visualized the relationship via scatter plot, the line of identity is represented by the red line, to see how far we deviate from the published data. We also computed the the correlation coefficnet (Pearsons R) at =0.852
-
-```{r}
-comparison <- merge( paper_5b %>% select(gene_id, paper_log2FC = log2FC, paper_pval = pval), our_5b %>% select(gene_id, our_log2FC = log2FC, our_pval = pval), by = "gene_id" )
-
-correlation_plot <-ggplot(comparison, aes(x = paper_log2FC, y = our_log2FC)) +
-  geom_point(alpha = 0.5) +
-  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
-  labs(
-    title = "Paper vs Our pipeline log2FC",
-    x = "Paper log2FC",
-    y = "Our pipeline log2FC"
-  ) +
-  theme_minimal()
-
-#Computing Coefficent correlation
-valid   <- is.finite(comparison$paper_log2FC) & is.finite(comparison$our_log2FC)
-cor_lfc <- with(comparison[valid, ], cor(paper_log2FC, our_log2FC))
-cat(sprintf("Log2FC correlation (finite only): %.3f\n", cor_lfc))
-#Returns 0.852
-```
-### Figure 7 (Located in Supplementary)
-
-
-
-
-
-
-#### Saving Plots
 For Figure A: our replicated plot closely matches the authors original, in terms of shape. density of significant genes above thep-value threshold and the mapping of the categories, showing that we were able to successfully replicate their findings.
 
 For Figure B: The consistency was also seen here between our group and their published data. The distribution of significant hits between categories is very similiar showing that our upstream mapping and more broadly our quantification and differential expression analysis faithfully reproduced the authors, allowing us to come to the same conclusion as their original paper.
@@ -631,14 +838,5 @@ ggsave(
   height   = 6,
   dpi      = 300
 )
-ggsave(
-  filename = file.path(plots_dir, "Correlation_Analysis.png"),
-  plot     = correlation_plot,
-  width    = 6,
-  height   = 6,
-  dpi      = 300
-)
 
-write.csv(summary_table, file.path(plots_dir, "GO_ENRICHMENT_OF OUR_RESULTS.csv"),row.names=FALSE)
 ```
-
