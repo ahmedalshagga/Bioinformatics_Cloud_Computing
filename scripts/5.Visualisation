@@ -606,7 +606,7 @@ ggsave(
 
 #Saving Heatmap
 ggsave(
-  filename = file.path(plots_dir, "Figure_S6A_Amino_Acid.png"),
+  filename = file.path(plots_dir, "Figure_S6.png"),
   plot     = Heatmap_Fig6, 
   width    = 10, 
   height   = 8,
