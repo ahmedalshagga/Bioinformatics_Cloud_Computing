@@ -577,17 +577,140 @@ cor_lfc <- with(comparison[valid, ], cor(paper_log2FC, our_log2FC))
 cat(sprintf("Log2FC correlation (finite only): %.3f\n", cor_lfc))
 #Returns 0.852
 ```
-### Figure 7 (Located in Supplementary)
 
+### Figure S7 (Located in Supplementary)
+Figure S7A and S7B showed differential expression by comparing transcriptomic profiles of different yeast strains under different conditions. Supplementary Figure 7A showed the differences in gene expression in Gln3 strains in the presence and absence of isobutanol. Supplementary Figure 7B showed the differences in gene expression in Gln3 and WT strains in the absence of isobutanol. A workflow similar to Figure 5A and 5B visualisations were used. Following GO enrichment mapping of categories, Paper Figure S7A (paper_group) and B data was defined as seen below. 
+```{r}
+#paper figure S7A data defined
+#first a new dataframe derived from the paper_dat dataframe containing selected columns
+#log2FC, pval and qval values used to define transcriptomic profile comparisons to be visualised in the volcano plot
+paper_group <- paper_dat %>%
+  dplyr::transmute(
+    gene_id   = SystematicName,
+    gene_name = GeneName,
+    locus     = Locus,
+    log2FC    = as.numeric(Gln3Iso_vs_Gln30_log2FC),
+    pval      = as.numeric(Gln3Iso_vs_Gln30_p),
+    qval      = as.numeric(Gln3Iso_vs_Gln30_q)
+  )
+#merge gene2cat dataframe and paper_group dataframe using gene_name=gene
+paper_group <- merge(
+  paper_group,
+  gene2cat,
+  by.x = "gene_name",
+  by.y = "gene",
+  all.x = TRUE
+)
+#any categories not predefined (during GO enrichment category mapping) classified as "All other genes"
+paper_group$category[is.na(paper_group$category)] <- "All other genes"
+print(table(paper_group$category))
 
+#Figure S7B paper data defined
+paper_7b <- paper_dat %>%
+  dplyr::transmute(
+    gene_id   = SystematicName,
+    gene_name = GeneName,
+    locus     = Locus,
+    log2FC    = as.numeric(Gln30_vs_WT0_log2FC),
+    pval      = as.numeric(Gln30_vs_WT0_p),
+    qval      = as.numeric(Gln30_vs_WT0_q)
+  )
 
+paper_7b <- merge(
+  paper_7b,
+  gene2cat,
+  by.x = "gene_name",
+  by.y = "gene",
+  all.x = TRUE
+)
+paper_7b$category[is.na(paper_7b$category)] <- "All other genes"
+```
+This workflow was also applied to our own data. 
+```{r}
+#Supplementary Figure S7 defined under our own data.
+# relevant transcriptomic profiles to compare are filtered
+#from the filtered data, columns are selected.
+#our_7a data frame merged with gene2cat_sys dataframe
+our_7a <- our_data %>%
+  dplyr::filter(
+    status   == "OK",
+    sample_1 == "gln3_NoIso",
+    sample_2 == "gln3_Iso"
+  ) %>%
+  dplyr::transmute(
+    gene_id,
+    locus,
+    log2FC = log2.fold_change., 
+    pval   = p_value,
+    qval   = q_value
+  ) %>%
+  merge(gene2cat_sys, by = "gene_id", all.x = TRUE)
+#undefined categories are termed as "All other genes"
+our_7a$category[is.na(our_7a$category)] <- "All other genes"
+```
+After the data has been defined, they can be applied to the volcano_plot_category function. The titles of each plot reflected the source of the data and the transcriptomic profiles being compared.
+```{r}
 
+fig7a_paper <- volcano_plot_category(
+  paper_group,
+  title = "Gln3 (1.3% isobutanol) / Gln3 (0% isobutanol) – paper data"
+)
+print(fig7a_paper)
+
+# Paper 7B: gln3Δ(1.3) / WT(1.3) from paper_dat
+fig7b_paper <- volcano_plot_category(
+  paper_7b,
+  title = "gln3Δ (0% isobutanol) / WT (0% isobutanol) – paper data"
+)
+print(fig7b_paper)
+
+#Our 7A: Gln3_Iso / Gln3_NoIso from gene_exp.diff 
+fig7a_ours <- volcano_plot_category(
+  our_7a,
+  title = "Gln3 (1.3% isobutanol) / Gln3 (0% isobutanol) – our pipeline"
+)
+print(fig7a_ours)
+
+# Our 7B: Gln3_Iso / WT_Iso from gene_exp.diff
+fig7b_ours <- volcano_plot_category(
+  our_7b,
+  title = "gln3Δ (1.3% isobutanol) / WT (1.3% isobutanol) – our pipeline"
+)
+print(fig7b_ours)
+```
+After plots for Figure S7A and B had been created, a correlation analysis was conducted to determine whether our results were similar. Firstly, the results from our data and from the study data was merged by gene_id. A correlation plot to show differences between datasets were plotted. An ideal linear relationship between our data and their data would be y=x (shown in red on the correlation plot). The correlation coefficient was calculated to be 0.844. Therefore, there was a strong correlation between our data and the study data. This suggests that our findings were similar to study findings. 
+```{r}
+#correlation analysis
+#merge study dataset and our dataset
+comparison_S7 <- merge( paper_7b %>% select(gene_id, paper_log2FC_S7 = log2FC, paper_pval_S7 = pval), our_7b %>% select(gene_id, our_log2FC_S7 = log2FC, our_pval_S7 = pval), by = "gene_id" )
+
+#create a correlation plot to show the differences
+correlation_plot <-ggplot(comparison_S7, aes(x = paper_log2FC_S7, y = our_log2FC_S7)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Paper vs Our pipeline log2FC",
+    x = "Paper log2FC",
+    y = "Our pipeline log2FC"
+  ) +
+  theme_minimal()
+
+#Computing correlation
+valid   <- is.finite(comparison_S7$paper_log2FC_S7) & is.finite(comparison_S7$our_log2FC_S7)
+cor_lfc <- with(comparison_S7[valid, ], cor(paper_log2FC_S7, our_log2FC_S7))
+cat(sprintf("Log2FC correlation (finite only): %.3f\n", cor_lfc))
+#returned value = 0.844 (3s.f.)
+```
 
 
 #### Saving Plots
-For Figure A: our replicated plot closely matches the authors original, in terms of shape. density of significant genes above thep-value threshold and the mapping of the categories, showing that we were able to successfully replicate their findings.
+For Figure 5A: our replicated plot closely matches the authors original, in terms of shape. density of significant genes above thep-value threshold and the mapping of the categories, showing that we were able to successfully replicate their findings.
 
-For Figure B: The consistency was also seen here between our group and their published data. The distribution of significant hits between categories is very similiar showing that our upstream mapping and more broadly our quantification and differential expression analysis faithfully reproduced the authors, allowing us to come to the same conclusion as their original paper.
+For Figure 5B: The consistency was also seen here between our group and their published data. The distribution of significant hits between categories is very similiar showing that our upstream mapping and more broadly our quantification and differential expression analysis faithfully reproduced the authors, allowing us to come to the same conclusion as their original paper.
+
+For Supplementary Figure S7A: our plot is similar to the study plot as there are many conserved trends (shape, values over the p-value threshold, datapoint distribution). Therefore, based on our findings, results of this study were reproducible. However, as seen with the correlation analysis, there were slight differences.
+
+For Supplementary Figure S7B: Similar to observations for Figure S7A, our plot was similar to the study plot on the basis of conserved trends. Therefore, study findings were reproducible. However, there were slight differences as a perfect correlation (coefficient =1) was not seen in the correlation analysis. 
 
 ```{r}
 # Create output directory 
@@ -631,12 +754,56 @@ ggsave(
   height   = 6,
   dpi      = 300
 )
+#save correlation plot for Figure 5
 ggsave(
   filename = file.path(plots_dir, "Correlation_Analysis.png"),
   plot     = correlation_plot,
   width    = 6,
   height   = 6,
   dpi      = 300
+)
+# Save papers Figure S7A
+ggsave(
+  filename = file.path(plots_dir, "Figure_7A_paper.png"),
+  plot     = fig7a_paper,
+  width    = 6,
+  height   = 6,
+  dpi      = 300
+)
+
+# Save papers Figure S7B
+ggsave(
+  filename = file.path(plots_dir, "Figure_7B_paper.png"),
+  plot     = fig7b_paper,
+  width    = 6,
+  height   = 6,
+  dpi      = 300
+)
+
+# Save our Figure S7A
+ggsave(
+  filename = file.path(plots_dir, "Figure_7A_replicate.png"),
+  plot     = fig7a_ours,
+  width    = 6,
+  height   = 6,
+  dpi      = 300
+)
+
+# Save our Figure S7B
+ggsave(
+  filename = file.path(plots_dir, "Figure_7B_replicate.png"),
+  plot     = fig7b_ours,
+  width    = 6,
+  height   = 6,
+  dpi      = 300
+)
+#saving correlation analysis for Figure S7 data
+ggsave(
+  filename = file.path(plots_dir, "Correlation_Analysis_for_S7.png"),
+  plot = correlation_plot_s7,
+  width = 6,
+  height = 6,
+  dpi = 300
 )
 
 write.csv(summary_table, file.path(plots_dir, "GO_ENRICHMENT_OF OUR_RESULTS.csv"),row.names=FALSE)

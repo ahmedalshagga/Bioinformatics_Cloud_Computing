@@ -4,7 +4,7 @@
 # Load required libraries
 #install.packages("ggrepel")
 #install.packages("BiocManager")
-#BiocManager::install("EnhancedVolcano")
+BiocManager::install("EnhancedVolcano")
 library(dplyr)
 library(ggplot2)
 library(readr)
