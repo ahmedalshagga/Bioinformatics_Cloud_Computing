@@ -1,0 +1,769 @@
+---
+title: "Reproduction of Critical Roles of the Pentose Phosphate Pathway and GLN3 in Isobutanol-Specific Tolerance in Yeast RNA-Seq Analysis"
+format: html
+editor: visual
+---n
+---
+
+## Introduction
+```{r}
+# Set global knitr options: show code, suppress warnings and messages
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+# Load required libraries
+#install.packages("BiocManager")
+#install.packages("ggrepel")
+#BiocManager::install("EnhancedVolcano")
+#BiocManager::install("clusterProfiler")
+#BiocManager::install("enrichplot")
+#BiocManager::install("org.Sc.sgd.db")
+
+# Load necessary R libraries
+library(tidyverse)        # Data manipulation and visualization
+library(clusterProfiler)  # GO/KEGG enrichment analysis
+library(org.Sc.sgd.db)    # Yeast gene annotation database
+library(EnhancedVolcano)  # Volcano plot visualization
+library(ggrepel)          # Improve text labels in ggplot2
+library(knitr)            # Report generation
+library(patchwork)        # Combine multiple plots
+library(scales)           # Axis scales and transformations
+
+# Avoid conflict between dplyr::select and other select functions
+select <- dplyr::select
+```
+
+This notebook documents the analysis and visualization of RNA-seq data from the reproduction of Kuroda et al (2019). The pipeline consisted of alignment (TopHat), quantification (Cufflinks), and differentrial expression analysis (Cuffdiff) within the HPC cluster environment.
+To validate the results from our pipeline, we compare our log2 fold change 
+values against the authors' published values (supplied in Supplementary 
+materials, "Summary_of_RNA_seq_analysis_of_duplicates.txt) via volcano plot visualization.
+
+Here we load results, validate them against the published data supplied in Supplementary Info and visualize the key findings.
+
+### Loading Data
+
+```{r}
+# Define the path to the Cuffdiff differential expression results file
+group_results_path <- "../processed_data/cuffdiff/gene_exp.diff"
+
+# 1. Load the differential expression results into R
+# read.delim reads a tab-delimited text file
+# header = TRUE: first row contains column names
+# stringsAsFactors = FALSE: keep character columns as strings instead of converting to factors
+our_data <- read.delim(group_results_path, header = TRUE, stringsAsFactors = FALSE)
+
+# Filter the data for the specific comparison: gln3_Iso vs WT_Iso
+# Then select and rename relevant columns for clarity
+group_results <- our_data %>%
+  filter(sample_1 == "gln3_Iso", sample_2 == "WT_Iso") %>%  # Keep only rows where sample_1 is 'gln3_Iso' and sample_2 is 'WT_Iso'
+  select(
+    gene_id,                      # Systematic gene ID
+    locus,                        # Gene locus information
+    log2FC = log2.fold_change.,   # Log2 fold change, renamed to 'log2FC' for easier reference
+    pval = p_value,               # p-value of differential expression
+    qval = q_value                # FDR-adjusted q-value
+  )
+
+# Print the number of genes loaded after filtering
+# nrow(group_results) gives the number of rows (genes) in the filtered dataset
+print(paste("Loaded", nrow(group_results), "genes from our analysis."))
+
+
+```
+
+We were able to load the same region of genes \~6,000 indicating our RNA-seq analysis was able to mimic theres quite well in terms of output. The discrepancy between them could be attributed to software drift between versions of Tophat (we utilised 2.1.0 as opposed to their 2.0.9 due to depreciation of the software previous models leading to its lack of availability) or perhaps differences in masking techniques in our methodology, due to insufficient documentation available to us. 
+
+### GO ENRICHMENT (OUR DATA)
+To check that our pipeline reproduces the biologoical  reported in the paper, 
+we perform **independent Gene Ontology (GO) enrichment analysis** on our 
+significant genes using the clusterProfiler package. This tests whether the 
+same biological processes are enriched in our data as the authors found in 
+theirs.
+
+The paper highlighted four key biological processes in outlined in Figure 5:
+
+- Cell wall organization or biogenesis (GO:0071554)
+- Cellular amino acid metabolic process (GO:0006520)
+- Glycolysis (GO:0005975)
+- Membrane lipid biosynthesis (GO:0006629)
+
+We consequently ran GO enrichment separately for upregulated and downregulated genes in 
+both Figure 5A,Figure 5B,Figure 6A, Figure 6B. We then extract genes belonging to these four key processes 
+**from our own enrichment results** to color the volcano plots, allowing 
+direct visual comparison with the paper's findings. This approach validates 
+that our pipeline not only reproduces the statistical results but also 
+independently identifies the same biological mechanisms.
+
+We had to implement a sign step due to CuffDiff alphabetical sorting which resulted in incosistent direction for our log2Fold changes which would have downstream complications when attempting to plot their data.
+
+```{r}
+# Create a list of unique genes with 'OK' status for GO enrichment background
+universe_list <- unique(our_data$gene_id[our_data$status == "OK"])
+
+# Define key GO terms and their descriptive names
+key_go_terms <- c(
+  "GO:0071554" = "Cell wall organization or biogenesis",
+  "GO:0006520" = "Cellular amino acid metabolic process",
+  "GO:0005975" = "Glycolysis",
+  "GO:0006629" = "Membrane lipid biosynthesis"
+)
+
+# Function to run GO enrichment for a gene list
+run_enrichment <- function(gene_list) {
+  if(length(gene_list) == 0) return(NULL)  # Return NULL if empty
+  enrichGO(
+    gene = gene_list, universe = universe_list, OrgDb = org.Sc.sgd.db, 
+    keyType = "ORF", ont = "BP", pAdjustMethod = "none", 
+    pvalueCutoff = 0.05, qvalueCutoff = 1.0
+  )
+}
+
+# Function to extract genes belonging to key GO categories
+get_key_category_genes <- function(ego_object) {
+  empty_df <- data.frame(gene_id = character(), category = character(), stringsAsFactors = FALSE)
+  
+  if (is.null(ego_object) || nrow(ego_object@result) == 0) return(empty_df)  # Return empty if no results
+  
+  # Filter only key GO terms
+  res <- ego_object@result %>% filter(ID %in% names(key_go_terms))
+  if(nrow(res) == 0) return(empty_df)  # Return empty if none found
+  
+  # Split geneIDs and assign category
+  gene_map <- data.frame(
+    gene_id  = unlist(strsplit(res$geneID, "/")), 
+    category = rep(key_go_terms[res$ID], times = sapply(strsplit(res$geneID, "/"), length)),
+    stringsAsFactors = FALSE
+  )
+  return(unique(gene_map))  # Return unique gene-category mapping
+}
+
+# Define list of comparisons with optional log2FC flipping
+comparisons <- list(
+  "5A" = list(s1="WT_NoIso", s2="WT_Iso", flip=FALSE), 
+  "5B" = list(s1="gln3_Iso", s2="WT_Iso", flip=TRUE), # Flip due to alphabetical sorting in Cuffdiff
+  "S7A" = list(s1="gln3_NoIso", s2="gln3_Iso", flip=FALSE),
+  "S7B" = list(s1="WT_NoIso", s2="gln3_NoIso", flip=FALSE)
+)
+
+# Initialize lists to store enrichment results and plotting data
+enrich_results <- list()  
+plot_data      <- list()
+
+# Loop over each comparison to process differential expression and enrichment
+for (fig in names(comparisons)) {
+  comp <- comparisons[[fig]]
+  
+  # Try to find direct match (sample1 vs sample2)
+  df_direct <- our_data %>% filter(status == "OK", sample_1 == comp$s1, sample_2 == comp$s2)
+  
+  # Check reverse match (sample2 vs sample1)
+  df_reverse <- our_data %>% filter(status == "OK", sample_1 == comp$s2, sample_2 == comp$s1)
+  
+  if (nrow(df_direct) > 0) {
+    df <- df_direct
+    df$log2.fold_change. <- as.numeric(df$log2.fold_change.)  # Ensure numeric
+    print(paste(fig, ": Found Direct Match -", nrow(df), "genes"))
+    
+  } else if (nrow(df_reverse) > 0) {
+    df <- df_reverse
+    df$log2.fold_change. <- -as.numeric(df$log2.fold_change.)  # Flip sign for reverse match
+    print(paste(fig, ": Found Reverse Match (Flipped Sign) -", nrow(df), "genes"))
+    
+  } else {
+    print(paste("Error: No data found for", fig, "- Check sample names!"))
+    next 
+  }
+  
+  # Flip log2FC if specified in comparisons list
+  if(comp$flip) df$log2.fold_change. <- -df$log2.fold_change.
+  
+  # Ensure p-values are numeric
+  df$p_value <- as.numeric(df$p_value)
+  
+  # Identify significantly upregulated and downregulated genes
+  genes_up   <- df %>% filter(log2.fold_change. > 1,  p_value < 0.05) %>% pull(gene_id)
+  genes_down <- df %>% filter(log2.fold_change. < -1, p_value < 0.05) %>% pull(gene_id)
+  
+  # Run GO enrichment for up and down genes
+  ego_up   <- run_enrichment(genes_up)
+  ego_down <- run_enrichment(genes_down)
+  
+  # Store enrichment results
+  enrich_results[[paste0(fig, "_UP")]]   <- ego_up
+  enrich_results[[paste0(fig, "_DOWN")]] <- ego_down
+  
+  # Extract key GO category genes
+  cat_up   <- get_key_category_genes(ego_up)
+  cat_down <- get_key_category_genes(ego_down)
+  cat_all  <- rbind(cat_up, cat_down)
+  
+  # Prepare data for plotting, merge with category info
+  df_plot <- df %>%
+    transmute(gene_id, locus, log2FC = log2.fold_change., pval = p_value) %>%
+    left_join(cat_all, by = "gene_id") %>%
+    mutate(category = ifelse(is.na(category), "All other genes", category))
+  
+  # Store plot data
+  plot_data[[fig]] <- df_plot
+}
+
+# Assign plot data for each figure for easy access
+our_5a  <- plot_data[["5A"]]
+our_5b  <- plot_data[["5B"]]
+our_s7a <- plot_data[["S7A"]]
+our_s7b <- plot_data[["S7B"]]
+
+# Function to summarize enrichment results for key GO categories
+get_summary_row <- function(ego_obj, label) {
+  if (is.null(ego_obj) || nrow(ego_obj@result) == 0) return(NULL)
+  
+  ego_obj@result %>%
+    filter(ID %in% names(key_go_terms)) %>%           # Keep only key GO terms
+    mutate(Category = key_go_terms[ID], Condition = label) %>%  # Add category and condition labels
+    select(Condition, Category, p.adjust, Count, GeneRatio)     # Select relevant summary columns
+}
+
+# Combine all summary rows into one validation table
+validation_summary_table <- bind_rows(
+  get_summary_row(enrich_results[["5A_UP"]],   "Fig 5A - Upregulated"),
+  get_summary_row(enrich_results[["5A_DOWN"]], "Fig 5A - Downregulated"),
+  get_summary_row(enrich_results[["5B_UP"]],   "Fig 5B - Upregulated"),
+  get_summary_row(enrich_results[["5B_DOWN"]], "Fig 5B - Downregulated"),
+  get_summary_row(enrich_results[["S7A_UP"]],  "Fig S7A - Upregulated"),
+  get_summary_row(enrich_results[["S7A_DOWN"]], "Fig S7A - Downregulated"),
+  get_summary_row(enrich_results[["S7B_UP"]],  "Fig S7B - Upregulated"),
+  get_summary_row(enrich_results[["S7B_DOWN"]], "Fig S7B - Downregulated")
+)
+
+# Display the GO enrichment validation summary
+validation_summary_table
+
+```
+Our independent GO enrichment analysis successfully reproduces the core biological findings reported by Kuroda et al, finding cellular amino acid metabolism strongly upregulated in wild type cells under stress. Alongisde downregulation of glylcosis and cell wall organisation and validation of the GLN3 rescue by identifying significant differentrialexpressions of amino acid metabolism and glyolcsis between the gln3 mutant cells and the wild type. We were unable to find membrane lipid biosyntehsis enriched at a significant level, which could be attribute to the papers authors implementing a custom list of specific genes (noted in Figure S7), as opposed to using the GO database definition.
+
+Analysis of the Figure S7 controls confirmed the specificity of the GLN3 response. In the baseline comparison (Figure S7B), no significant enrichment was detected in any key pathway, confirming that the gln3Δ deletion does not disrupt central metabolism under unstressed conditions. Under isobutanol stress (Figure S7A), the gln3Δ mutant completely failed to mount the nitrogen starvation response, with amino acid metabolism showing no significant upregulation ($p \approx 0.50$), in stark contrast to the wild type ($p < 10^{-10}$). These results can be visualised in the graph below
+```{r}
+# Create a heatmap for GO enrichment results
+go_enrichment_heatmap <- validation_summary_table %>%
+  
+  # Compute -log10 of adjusted p-value for color scaling
+  # Convert Category to a factor to control the order in the plot
+  mutate(
+    log_p = -log10(p.adjust),
+    Category = factor(Category, levels = as.character(key_go_terms)) 
+  ) %>%
+  
+  # Initialize ggplot with Condition on x-axis, Category on y-axis, fill color based on -log10(p.adjust)
+  ggplot(aes(x = Condition, y = Category, fill = log_p)) +
+  
+  # Add tiles for heatmap with white borders
+  geom_tile(color = "white", linewidth = 0.8) + 
+  
+  # Overlay text labels showing the number of significant genes
+  geom_text(aes(label = Count), color = "black", size = 3) + 
+
+  # Define a custom color gradient for -log10(p.adjust)
+  scale_fill_gradientn(
+    colors = c("#FFF5F0", "#FEE0D2", "#FC9272", "#DE2D26", "#A50F15"),
+    name = expression(-log[10](p[adj])),  # Label for legend
+    na.value = "grey95"                   # Color for missing values
+  ) +
+  
+  # Add plot titles and remove axis labels
+  labs(
+    title = "GO Enrichment Analysis",
+    subtitle = "Numbers represent the count of significant genes in each category",
+    x = NULL, 
+    y = NULL
+  ) +
+  
+  # Use a minimal theme as the base
+  theme_minimal(base_size = 12) +
+  
+  # Customize theme elements
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black"), 
+    # Rotate x-axis labels for readability
+    axis.text.y = element_text(color = "black", face = "bold"),          
+    # Bold y-axis labels
+    panel.grid  = element_blank(),                                       
+    # Remove grid lines
+    legend.position = "right",                                           
+    # Place legend on the right
+    plot.title = element_text(face = "bold"),                            
+    # Bold plot title
+    plot.subtitle = element_text(size = 10, color = "grey40")           
+    # Subtitle styling
+  )
+
+# Render the heatmap
+plot(go_enrichment_heatmap)
+
+```
+
+
+### Volcano plot Function
+To make the comparisons easier and ensure that both our results and the authors’ results are plotted in exactly the same way, we define a small helper function `volcano_plot_category()`, 
+The features of the graph are as follow:
+  - x-axis: log₂ fold change  
+  - y-axis: –log₁₀(p-value)  
+  - vertical dashed lines at |log₂FC| = 1  
+  - a horizontal dashed line at p = 0.05  
+Colored points are selected via category so that the four highlighted biological processes can be visually traced across the plot in the same manner as the original paper. 
+
+```{r}
+# Define a function to create a volcano plot with gene categories highlighted
+volcano_plot_category <- function(df,
+                                  title      = "WT (1.3% Isobutanol) / WT (0% Isobutanol)",
+                                  lfc_thresh = 1,       # Threshold for log2 fold change
+                                  p_thresh   = 0.05,    # Threshold for p-value
+                                  point_size = 0.5) {   # Size of points
+
+  # Filter out rows with missing log2FC or p-value
+  keep <- !is.na(df$log2FC) & !is.na(df$pval)
+  df   <- df[keep, , drop = FALSE]
+
+  # Compute -log10(p-value) for y-axis
+  df$neg_log10_p <- -log10(df$pval)
+
+  # Determine which column contains gene category information
+  cat_col <- NULL
+  if ("category.1" %in% names(df)) {
+    cat_col <- "category.1" 
+  } else if ("category" %in% names(df)) {
+    cat_col <- "category"
+  }
+
+  # Default to "All other genes" if no category column exists
+  if (is.null(cat_col)) {
+    cat_vec <- rep("All other genes", nrow(df))
+  } else {
+    cat_vec <- df[[cat_col]]
+  }
+
+  # Clean and normalize category labels
+  cat_vec[is.na(cat_vec)] <- "All other genes"   # Replace NAs
+  cat_vec <- trimws(cat_vec)                     # Remove extra whitespace
+  low     <- tolower(cat_vec)                    # Convert to lowercase for comparison
+
+  # Collapse to 5 categories matching the paper's graph
+  cat_clean <- ifelse(low == "cell wall organization or biogenesis",
+                      "Cell wall organization or biogenesis",
+                ifelse(low == "cellular amino acid metabolic process",
+                      "Cellular amino acid metabolic process",
+                ifelse(low == "glycolysis",
+                      "Glycolysis",
+                ifelse(low == "membrane lipid biosynthesis",
+                      "Membrane lipid biosynthesis",
+                      "All other genes"))))
+
+  # Convert category to factor with specific order for consistent coloring
+  df$category_plot <- factor(
+    cat_clean,
+    levels = c(
+      "All other genes",
+      "Cell wall organization or biogenesis",
+      "Cellular amino acid metabolic process",
+      "Glycolysis",
+      "Membrane lipid biosynthesis"
+    )
+  )
+
+  # Define color palette for each category
+  category_cols <- c(
+    "All other genes"                        = "grey60",
+    "Cell wall organization or biogenesis"   = "#1f77b4",
+    "Cellular amino acid metabolic process"  = "#ff9ea6",
+    "Glycolysis"                             = "#8fb5ff",
+    "Membrane lipid biosynthesis"            = "#ffd66b"
+  )
+
+  # Create the volcano plot
+  ggplot(df, aes(x = log2FC, y = neg_log10_p)) +
+    
+    # Plot points colored by category
+    geom_point(aes(colour = category_plot),
+               size = point_size, alpha = 0.9) +
+    
+    # Add vertical dashed lines for fold change threshold
+    geom_vline(xintercept = c(-lfc_thresh, lfc_thresh),
+               linetype = "dashed", colour = "white", linewidth = 0.4) +
+    
+    # Add horizontal dashed line for p-value threshold
+    geom_hline(yintercept = -log10(p_thresh),
+               linetype = "dashed", colour = "white", linewidth = 0.4) +
+    
+    # Limit x and y axes ranges
+    scale_x_continuous(limits = c(-10, 10)) +
+    scale_y_continuous(limits = c(0, 5)) +
+    
+    # Apply manual colors for categories
+    scale_color_manual(
+      values = category_cols,
+      drop   = FALSE,
+      name   = NULL
+    ) +
+
+    # Format legend with multiple rows
+    guides(colour = guide_legend(nrow = 3, byrow = TRUE)) +
+    
+    # Add plot titles and axis labels
+    labs(
+      title = title,
+      x = expression(Log[2] ~ "fold change"),
+      y = expression(-Log[10] ~ "p-value")
+    ) +
+    
+    # Apply minimal theme and customize appearance
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.background   = element_rect(fill = "black", colour = NA), # Black background
+      panel.background  = element_rect(fill = "black", colour = NA),
+      panel.grid.major  = element_line(colour = "#444444", linewidth = 0.3),
+      panel.grid.minor  = element_line(colour = "#333333", linewidth = 0.2),
+      
+      axis.text         = element_text(colour = "white"),            # Axis text color
+      axis.title        = element_text(colour = "white"),            # Axis title color
+      
+      plot.title        = element_text(colour = "white", hjust = 0.5, margin = margin(b = 10)),
+      
+      legend.background = element_rect(fill = "black", colour = NA),
+      legend.key        = element_rect(fill = "black", colour = NA),
+      
+      legend.text       = element_text(colour = "white", size = 10), 
+      legend.position   = "bottom",
+      legend.margin     = margin(t = 10), 
+      plot.margin       = margin(20, 20, 20, 20) 
+    )
+}
+
+```
+## Plotting a volcano plot
+We now generate volcano plots for each of the two contrasts using both
+the published statistics and our own RNA-seq CuttDiff output. As all
+plots are constructed with the same helper function, any differences
+we see should primarily reflect differences in the underlying
+statistics, not plotting discrepancies.
+
+```{r}
+# Generate volcano plot for Figure 5A: WT_NoIso vs WT_Iso
+fig5a_ours <- volcano_plot_category(
+  our_5a,  # Input data for 5A
+  title = "Figure 5A: WT (1.3% isobutanol) / WT (0% isobutanol)"  # Plot title
+)
+print(fig5a_ours)  # Display the plot
+
+# Generate volcano plot for Figure 5B: gln3_Iso vs WT_Iso
+fig5b_ours <- volcano_plot_category(
+  our_5b,  # Input data for 5B
+  title = "Figure 5B gln3 (1.3% isobutanol) / WT (1.3% isobutanol)"  # Plot title
+) 
+print(fig5b_ours)  # Display the plot
+
+# Generate volcano plot for Figure S7A: gln3_Iso vs gln3_NoIso
+figs7a_ours <- volcano_plot_category(
+  our_s7a,  # Input data for S7A
+  title = "Fig S7A: gln3 (1.3% Iso) / gln3Δ (0% Iso)"  # Plot title
+)
+print(figs7a_ours)  # Display the plot
+
+# Generate volcano plot for Figure S7B: gln3_NoIso vs WT_NoIso
+figs7b_ours <- volcano_plot_category(
+  our_s7b,  # Input data for S7B
+  title = "Fig S7B: gln3 (0% Iso) / WT (0% Iso)"  # Plot title
+)
+print(figs7b_ours)  # Display the plot
+
+# Combine Figures 5A and 5B side by side using patchwork
+Fig5_combined <- fig5a_ours | fig5b_ours
+print(Fig5_combined)  # Display the combined Figure 5 plots
+
+# Combine Figures S7A and S7B side by side using patchwork
+Fig7_combined <- figs7a_ours | figs7b_ours
+print(Fig7_combined)  # Display the combined Figure S7 plots
+
+```
+###### Heatmap plot function
+```{r}
+# Construct FPKM matrix: combine sample_1 and sample_2 values, remove duplicates, reshape to wide format, set rownames as gene IDs, convert to matrix
+fpkm_mat <- bind_rows(
+  our_data %>% dplyr::select(id=gene_id, s=sample_1, v=value_1),
+  our_data %>% dplyr::select(id=gene_id, s=sample_2, v=value_2)
+) %>%
+  distinct(id, s, .keep_all=TRUE) %>%
+  pivot_wider(names_from=s, values_from=v) %>%
+  column_to_rownames("id") %>%
+  as.matrix()
+
+# Map gene names to systematic IDs
+gene_map_df <- our_data %>% 
+  dplyr::select(id = gene_id, name = gene) %>% 
+  distinct()
+
+# Define significance: genes with p_value < 0.05 relative to WT_NoIso
+sig_data <- our_data %>%
+  filter(sample_1 == "WT_NoIso" | sample_2 == "WT_NoIso") %>%
+  mutate(
+    condition = ifelse(sample_1 == "WT_NoIso", sample_2, sample_1),  # Determine comparison condition
+    is_sig = p_value < 0.05                                           # Boolean flag for significance
+  ) %>%
+  select(id = gene_id, condition, is_sig)
+
+# Define gene blocks for left panel (amino acid biosynthesis categories)
+s6a_blocks_left <- list(
+  "Branched-chain\namino acids" = c("ILV5","ILV2","ILV3","BAT1","LEU1","BAT2","LEU9"),
+  "Aromatic\namino acids"        = c("ARO3","ARO4","TRP3","ARO1","ARO8","TRP2","ARO9"),
+  "Met"                          = c("HOM2","MET14","MET17","MET10","HOM3","MET6","MET16","MET3","MET5")
+)
+
+# Define gene blocks for right panel (other amino acids)
+s6a_blocks_right <- list(
+  "Arg"      = c("ARG1","ARG3","ARG4","ARG8","ARG5,6","ARG7"),
+  "Glu, Gln" = c("GLT1","GDH1","GDH3","IDP1","GLN1"),
+  "His"      = c("HIS4","HIS5","HIS1","HIS7"),
+  "Ser"      = c("SER2","SER1","SER33","SER3"),
+  "Lys"      = c("LYS1","LYS20","LYS9"),
+  "Cys"      = c("CYS3","CYS4"),
+  "Ala, Asn, Asp" = c("AAT1","ASN1","ALT1")
+)
+
+# Define gene blocks for bottom panel (glycolysis genes)
+s6b_blocks<- list (
+  "Glyoclsis" = c(
+    "CDC19", "ENO2", "ENO1", "FBA1", "TDH1", "PGK1", "TPI1", "TDH3", "GPM1", "TDH2", "PYK2"
+  )
+)
+
+# Define plotting function for a side heatmap panel
+plot_side <- function(block_list, gene_mapping, stats_df) {
+
+  # Prepare layout: combine block names with gene names into a dataframe
+  layout_df <- bind_rows(lapply(names(block_list), function(block_name) {
+    data.frame(
+      GeneName = block_list[[block_name]], 
+      Block = block_name, 
+      stringsAsFactors = FALSE
+    )
+  }))
+  
+  # Map gene names to systematic IDs using gene mapping; filter only genes present in FPKM matrix
+  layout_df <- layout_df %>%
+    left_join(gene_mapping, by = c("GeneName" = "name")) %>%
+    mutate(SystematicID = coalesce(id, GeneName)) %>%
+    filter(SystematicID %in% rownames(fpkm_mat))
+  
+  if(nrow(layout_df) == 0) return(NULL)  # Return NULL if no genes matched
+
+  # Extract FPKM values for selected genes and apply log2 transformation
+  mat <- log2(fpkm_mat[layout_df$SystematicID, , drop=FALSE] + 1)
+
+  # Compute population standard deviation for each row (gene)
+  pop_sd <- function(x) sqrt(sum((x - mean(x))^2) / length(x))
+  row_sds <- apply(mat, 1, pop_sd)
+  
+  # Normalize matrix to Z-scores relative to WT_NoIso
+  mat_norm <- sweep(mat, 1, mat[,"WT_NoIso"], "-") / row_sds
+  mat_norm[!is.finite(mat_norm)] <- 0  # Replace non-finite values with 0
+
+  # Select conditions to show
+  cols_to_show <- c("gln3_NoIso", "gln3_Iso", "WT_Iso")
+  
+  # Convert matrix to long dataframe for plotting, merge with layout and significance info
+  df_plot <- as.data.frame(mat_norm[, cols_to_show, drop=FALSE]) %>%
+    rownames_to_column("SystematicID") %>%
+    pivot_longer(-SystematicID, names_to = "Condition", values_to = "ZScore") %>%
+    inner_join(layout_df, by = "SystematicID") %>%
+    left_join(stats_df, by =c("SystematicID"="id", "Condition"="condition")) %>%
+    mutate(
+      Condition = factor(Condition, levels = cols_to_show),      # Order conditions
+      Block = factor(Block, levels = names(block_list)),         # Order blocks
+      GeneName = factor(GeneName, levels = rev(unique(layout_df$GeneName))), # Reverse gene order for plotting
+      is_sig = replace_na(is_sig, FALSE)                         # Fill NA significance with FALSE
+    )
+
+  # Generate heatmap with tiles colored by Z-score, significant genes marked with "*"
+  ggplot(df_plot, aes(x = Condition, y = GeneName, fill = ZScore)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = ifelse(is_sig, "*", "")), color = "black", size = 4, vjust = 0.75) +
+    scale_fill_gradient2(
+      low = "#00bfff", mid = "black", high = "#fff000", 
+      midpoint = 0, limits = c(-3, 3), oob = scales::squish
+    ) +
+    facet_grid(Block ~ ., scales = "free_y", space = "free_y") +  # Separate by block
+    labs(x = "", y = "") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid = element_blank(),
+      strip.text.y = element_text(angle = 0, face = "bold", size = 8),
+      panel.spacing = unit(0.2, "lines"),
+      axis.text.y = element_text(size = 8)
+    )
+}
+
+# Generate heatmap panels
+p_left   <- plot_side(s6a_blocks_left, gene_map_df, sig_data)
+p_right  <- plot_side(s6a_blocks_right, gene_map_df, sig_data)
+p_bottom <- plot_side(s6b_blocks, gene_map_df, sig_data)
+
+# Combine all panels into Figure S6 with title, subtitle, and collected legends
+Heatmap_Fig6 <- (p_left | p_right | p_bottom ) + 
+  plot_layout(guides = "collect") +
+  plot_annotation(
+    title = "Figure S6: Amino Acid & Glycolysis Pathways",
+    subtitle = "Z-Scores relative to WT (0% Isobutanol). * p < 0.05",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 14))
+  )
+
+# Display the combined heatmap
+print(Heatmap_Fig6)
+
+```
+
+### Verification of the correlation between results
+To be able to quantatively verify the accuracy of our reproduction of the paper, we performed a correlation analysis between our log2 fold changes reported by Kurdo et a. and those generated by our pipeline, We merged data sets via genes and visualized the relationship via scatter plot, the line of identity is represented by the red line, to see how far we deviate from the published data. We also computed the correlation coefficnet (Pearsons R) at =0.849 for Figures 5 and for Figure 7 we computed
+
+```{r}
+# Define path to paper-provided results
+paper_results_path <- "../processed_data/Papers_Results"
+
+# Load paper data, skip first 3 rows, remove unnecessary columns
+paper_dat <- read.delim(paper_results_path, header = FALSE, stringsAsFactors = FALSE, check.names = FALSE) %>%
+  dplyr::slice(4:n()) %>%
+  dplyr::select(-c(17, 21, 25, 29, 33))
+
+# Assign proper column names for easier reference
+colnames(paper_dat) <- c(
+  "SystematicName", "GeneName", "NameDescription", "Locus",
+  "WT0_Rep1  ", "WT0_Rep2", "WT0_mean",
+  "WTIso_Rep1", "WTIso_Rep2", "WTIso_mean",
+  "Gln30_Rep1", "Gln30_Rep2", "Gln30_mean",
+  "Gln3Iso_Rep1", "Gln3Iso_Rep2", "Gln3Iso_mean",
+  "Gln3Iso_vs_WTIso_log2FC", "Gln3Iso_vs_WTIso_p", "Gln3Iso_vs_WTIso_q",
+  "Gln30_vs_WT0_log2FC",      "Gln30_vs_WT0_p",      "Gln30_vs_WT0_q",
+  "Gln3Iso_vs_Gln30_log2FC", "Gln3Iso_vs_Gln30_p", "Gln3Iso_vs_Gln30_q",
+  "WTIso_vs_WT0_log2FC",      "WTIso_vs_WT0_p",      "WTIso_vs_WT0_q",
+  "Gln3Iso_vs_WT0_log2FC",    "Gln3Iso_vs_WT0_p",    "Gln3Iso_vs_WT0_q"
+)
+
+# Function to compute correlation between paper log2FC and our results, and plot
+run_correlation <- function(paper_col_lfc, our_df, title_suffix, filename) {
+  
+  # A. Extract Paper Data for the selected column
+  paper_sub <- paper_dat %>%
+    dplyr::select(gene_id = SystematicName, log2FC = all_of(paper_col_lfc)) %>%
+    mutate(log2FC = as.numeric(log2FC))  # Ensure numeric
+  
+  # B. Merge with our computed log2FC values
+  merged <- merge(
+    paper_sub %>% dplyr::select(gene_id, paper_lfc = log2FC),
+    our_df    %>% dplyr::select(gene_id, our_lfc = log2FC),
+    by = "gene_id"
+  )
+  
+  # C. Compute Pearson correlation for valid numeric points
+  valid_pts <- is.finite(merged$paper_lfc) & is.finite(merged$our_lfc)
+  cor_val   <- cor(merged$paper_lfc[valid_pts], merged$our_lfc[valid_pts], method = "pearson")
+  cat(sprintf("Pearson Correlation (%s): %.3f\n", title_suffix, cor_val))
+  
+  # D. Generate scatter plot comparing paper vs our log2FC
+  p <- ggplot(merged, aes(x = paper_lfc, y = our_lfc)) +
+    geom_point(alpha = 0.5, color = "black", size = 0.8) +  # Plot points
+    geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +  # Identity line
+    labs(
+      title = paste("Validation: Log2FC Correlation -", title_suffix),
+      x = "Paper Reported log2FC",
+      y = "Our Pipeline log2FC"
+    ) +
+    theme_minimal() +
+    theme(plot.title = element_text(face = "bold"))
+}
+
+# Compare log2FC for Fig 5B (Rescue: Gln3Iso vs WTIso)
+fig_5_correl <- run_correlation(
+  paper_col_lfc = "Gln3Iso_vs_WTIso_log2FC",
+  our_df        = our_5b,
+  title_suffix  = "Fig 5B (Rescue)"
+)
+
+# Compare log2FC for Fig S7B (Baseline: Gln30 vs WT0)
+fig_7_correl <- run_correlation(
+  paper_col_lfc = "Gln30_vs_WT0_log2FC",
+  our_df        = our_s7b,
+  title_suffix  = "Fig S7B (Baseline)"
+)
+
+# Combine both correlation plots side by side
+Correlation_combined <- fig_5_correl | fig_7_correl
+
+# Display combined figure
+print(Correlation_combined)
+
+```
+
+#### Saving Plots
+For Figure A: our replicated plot closely matches the authors original, in terms of shape. density of significant genes above thep-value threshold and the mapping of the categories, showing that we were able to successfully replicate their findings.
+
+For Figure B: The consistency was also seen here between our group and their published data. The distribution of significant hits between categories is very similiar showing that our upstream mapping and more broadly our quantification and differential expression analysis faithfully reproduced the authors, allowing us to come to the same conclusion as their original paper.
+
+For Figure 6: After using their constructed lists to examine the genes and pathways they specified and calibrating our row z score to theirs (3 to -3), we observed the same trends but at lower z score values as shown by the darkened colours, this could have arisen from the authors having extra filtertation steps not outlined in the paper to reduce variance in their results, software drift leading to decreased calculated FPKM values whic 
+```{r}
+# Create output directory 
+plots_dir <- "..plots"
+# Save the correlation plot for validation as PNG
+ggsave(
+  filename = file.path(plots_dir, "Correlation_For_Figures.png"), # Output path
+  plot = Correlation_combined,                                     # Plot object
+  width = 12,                                                      # Width in inches
+  height = 6,                                                      # Height in inches
+  dpi = 300                                                         # Resolution in DPI
+)
+
+# Save Figure 5 combined volcano plots
+ggsave(
+  filename = file.path(plots_dir, "Figure_5.png"),                 # Output path
+  plot     = Fig5_combined,                                        # Plot object
+  width    = 12,                                                   # Width in inches
+  height   = 6,                                                    # Height in inches
+  dpi      = 300                                                   # Resolution in DPI
+)
+
+# Save Figure S7 combined volcano plots
+ggsave(
+  filename = file.path(plots_dir, "Figure_S7.png"),                # Output path
+  plot = Fig7_combined,                                            # Plot object
+  width = 12,                                                      # Width in inches
+  height = 6,                                                      # Height in inches
+  dpi = 300                                                        # Resolution in DPI
+)
+
+# Save heatmap for amino acid & glycolysis pathways (Figure S6)
+ggsave(
+  filename = file.path(plots_dir, "Figure_S6.png"),                # Output path
+  plot     = Heatmap_Fig6,                                         # Plot object
+  width    = 16,                                                   # Width in inches
+  height   = 10,                                                   # Height in inches
+  dpi      = 300                                                   # Resolution in DPI
+)
+
+# Save GO enrichment heatmap
+ggsave(
+  filename = file.path(plots_dir, "Go_Enrichment_Heatmap.png"),    # Output path
+  plot     = go_enrichment_heatmap,                                # Plot object
+  width    = 16,                                                   # Width in inches
+  height   = 10,                                                   # Height in inches
+  dpi      = 300                                                   # Resolution in DPI
+)
+
+# Save GO enrichment summary table as CSV
+write.csv(
+  validation_summary_table,                                        # Data frame to save
+  file.path(plots_dir, "GO_ENRICHMENT_OF OUR_RESULTS.csv"),        # Output path
+  row.names = FALSE                                                # Exclude row names
+)
+```
+
+
+
+
+
+
+
