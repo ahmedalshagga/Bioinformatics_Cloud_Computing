@@ -15,14 +15,13 @@ echo "Beginning RNA-seq Analysis"
 
 # Script 1: Quality Control
 echo "Submitting Step 1: Quality Check"
-# Assuming the file in your tree is named '0.QualityCheck'
 JOB_ID_1=$(sbatch --parsable "$SCRIPT_DIR/0.QualityCheck")
 echo "Job ID: $JOB_ID_1"
 
 #Script1.5
 echo "Submitting Step 1.5: Build Genome Index"
 # This does not depend on QC, so it can run in parallel
-JOB_ID_INDEX=$(sbatch --parsable "$SCRIPT_DIR/0.Build_Index")
+JOB_ID_INDEX=$(sbatch --parsable "$SCRIPT_DIR/0.5Index_Builder")
 echo "Job ID: $JOB_ID_INDEX"
 
 # Script 2: Alignment (TopHat)
@@ -33,7 +32,6 @@ echo "Job ID: $JOB_ID_2 (Waits for $JOB_ID_1)"
 
 # Script 3: Processing (Picard)
 echo "Step 3: Processing (Picard)"
-# FIXED: Changed dependency from JOB_ID_2_5 to JOB_ID_2
 JOB_ID_3=$(sbatch --parsable --dependency=afterok:$JOB_ID_2 "$SCRIPT_DIR/2.Processing")
 echo "Job ID: $JOB_ID_3 (Waits for $JOB_ID_2)"
 
