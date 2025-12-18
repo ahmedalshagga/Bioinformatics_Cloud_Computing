@@ -5,34 +5,47 @@ This pipeline does a series of analyses, including quality control, index constr
 Script 1 quality control:
 
 ```{bash}
-#Preliminary Quality Check
+# Preliminary Quality Check: assess the quality of raw RNA-seq reads
 
-#Initalising conda enviroment
+# Initialize conda to enable conda commands in the current shell
 eval "$(conda shell.bash hook)"
+
+# Activate the conda environment containing FastQC and MultiQC
 conda activate Quality_control_Env
 
-#Defining Direc
+# Define the directory containing raw FASTQ files
 raw_dir="raw_data"
+
+# Define the output directory for individual FastQC results
 FASTQC_OUT="processed_data/fastqc"
+
+# Define the output directory for the aggregated MultiQC report
 MULTIQC_OUT="processed_data/multiqc"
 
-
-#Create Output Directories
+# Create output directories if they do not already exist
 echo "--> Creating output directories..."
 mkdir -p "$FASTQC_OUT"
 mkdir -p "$MULTIQC_OUT"
 
-#Running the Quality Check
+# Print message indicating the start of FastQC analysis
 echo "Running FASTQC files in $raw_dir..."
+
+# Run FastQC on all compressed FASTQ files in the raw data directory
 fastqc "$raw_dir"/*.fastq.gz -o "$FASTQC_OUT"
 
+# Print message indicating the start of MultiQC aggregation
 echo "Running MultiQC aggregation..."
+
+# Aggregate all FastQC reports into a single MultiQC summary report
 multiqc "$FASTQC_OUT" -o "$MULTIQC_OUT"
 
-#  Cleanup of  fastqc folder since MultiQC has aggregated the data
+# Print message indicating cleanup of intermediate FastQC files
 echo "--> Deleting raw FastQC files to save disk space..."
+
+# Remove FastQC-generated zip files after MultiQC aggregation
 rm -rf "$FASTQC_OUT"/*.zip
 
+# Output the location of the final MultiQC HTML report
 echo "Report available in $MULTIQC_OUT/multiqc_report.html"
 ```
 
@@ -44,6 +57,8 @@ Script 2 index construction:
 
 ```{bash}
 #!/bin/bash
+# Specify the script interpreter as bash
+
 #SBATCH --partition=msc_appbio
 #SBATCH --job-name=build_index
 #SBATCH --output=logs/index_%j.output
@@ -54,24 +69,43 @@ Script 2 index construction:
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 
-# Initialize Environment
+# Enable conda commands in the current shell session
 eval "$(conda shell.bash hook)"
+
+# Activate the conda environment containing Bowtie2 and gffread
 conda activate isobutanol_paper
 
-#Set up Directories
+# Define the main reference directory
 REF_DIR="References"
+
+# Define the path to the original reference genome FASTA file
 ORIGINAL_FASTA="${REF_DIR}/S288C_reference_sequence_R64-1-1_20110203.fsa"
+
+# Define the path for the cleaned FASTA file with renamed chromosomes
 CLEAN_FASTA="${REF_DIR}/genome_clean.fa"
+
+# Define the directory for the Bowtie2 index files
 INDEX_DIR="${REF_DIR}/BowtieIndex"
+
+# Define the prefix name for the Bowtie2 index
 INDEX_PREFIX="${INDEX_DIR}/genome"
+
+# Define the path to the original GFF annotation file
 ORIGINAL_GFF="${REF_DIR}/saccharomyces_cerevisiae_R64-1-1_20110208.gff"
+
+# Define the output path for the converted GTF annotation file
 NEW_GTF="${REF_DIR}/genes.gtf"
 
-#Rename chromosomes in fasta
-# This aligns the NCBI names (ref|NC_001133|) with SGD names (chrI)
+# This step standardizes chromosome names from NCBI format
+# (e.g. ref|NC_001133|) to SGD format (e.g. chrI)
+# to ensure consistency between the genome FASTA and annotation files
 
 echo "Renaming chromosomes in FASTA..."
+
+# Check that the original FASTA file exists before processing
 if [ -f "$ORIGINAL_FASTA" ]; then
+
+    # Replace each NCBI chromosome identifier with the corresponding SGD name
     sed 's/^>ref|NC_001133|.*/>chrI/' "$ORIGINAL_FASTA" | \
     sed 's/^>ref|NC_001134|.*/>chrII/' | \
     sed 's/^>ref|NC_001135|.*/>chrIII/' | \
@@ -91,22 +125,34 @@ if [ -f "$ORIGINAL_FASTA" ]; then
     sed 's/^>ref|NC_001224|.*/>chrmt/' | \
     sed 's/^>ref|NC_001398|.*/>2-micron/' > "$CLEAN_FASTA"
 
+    # Confirm creation of the cleaned FASTA file
     echo "Created clean FASTA at $CLEAN_FASTA"
+fi
 
-#Build Index
-
+# Print status message before starting index construction
 echo "Building Bowtie2 index..."
+
+# Create the index directory if it does not already exist
 mkdir -p "$INDEX_DIR"
+
+# Build the Bowtie2 index using four CPU threads
 bowtie2-build --threads 4 "$CLEAN_FASTA" "$INDEX_PREFIX"
+
+# Confirm completion of index building
 echo "Index building complete."
 
-#Conversion GFF to GTF
-# Tophat requires GTF format. We use gffread to convert.
+# Tophat requires gene annotations in GTF format
+# gffread is used to convert the original GFF file to GTF
+
 echo "Converting GFF to GTF..."
 
-    gffread "$ORIGINAL_GFF" -T -o "$NEW_GTF"
-    echo "Created GTF file at $NEW_GTF"
+# Convert the annotation file from GFF to GTF format
+gffread "$ORIGINAL_GFF" -T -o "$NEW_GTF"
 
+# Confirm creation of the GTF annotation file
+echo "Created GTF file at $NEW_GTF"
+
+# Indicate successful completion of all reference preparation steps
 echo "All reference preparation tasks completed successfully."
 ```
 
@@ -122,60 +168,81 @@ Script 3 read alignment:
 
 ```{bash}
 #!/bin/bash
+# SLURM job configuration for RNA-seq alignment
+
 #SBATCH --partition=msc_appbio
 #SBATCH --job-name=yeast_alignment
 #SBATCH --output=logs/align_%j.output
 #SBATCH --error=logs/align_%j.error
 #SBATCH --nodes=1
-#SBATCH --time=8:00:00
+#SBATCH --time=08:00:00
 #SBATCH --mem=8G
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 
-#Mapping rna-seq reads to reference genome via Tophat
+# Enable conda commands in the current shell
 eval "$(conda shell.bash hook)"
+
+# Activate the conda environment for alignment
 conda activate isobutanol_paper
 
-#Directory setup
+# Define the directory containing raw FASTQ files
 RAW_DIR="raw_data"
+
+# Define the Bowtie2 index prefix
 REF_INDEX="References/BowtieIndex/genome"
+
+# Define the output directory for TopHat results
 OUT_DIR="processed_data/tophat"
+
+# Define the gene annotation file in GTF format
 GTF_FILE="References/genes.gtf"
+
+# Define the directory for consolidated BAM files
 BAM_DIR="processed_data/bams"
 
+# Create output directories if they do not exist
 mkdir -p "$OUT_DIR"
 mkdir -p "$BAM_DIR"
 mkdir -p logs
 
-#Code logic
+# Loop through all paired-end read 1 files
 for file in "$RAW_DIR"/*_1.fastq.gz; do
-filename=$(basename "$file") #Extracting the sample name
-sample_id="${filename%_1.fastq.gz}"
-echo "Processing sample : $sample_id"
 
-#Defining filename
-r1="${RAW_DIR}/${sample_id}_1.fastq.gz"
-r2="${RAW_DIR}/${sample_id}_2.fastq.gz"
+    # Extract the sample name from the filename
+    filename=$(basename "$file")
+    sample_id="${filename%_1.fastq.gz}"
 
-#Specific output dir for this result
-sample_out="${OUT_DIR}/${sample_id}"
-mkdir -p "$sample_out"
+    # Print the current sample being processed
+    echo "Processing sample: $sample_id"
 
-#Running the Tophat programme
-tophat -p 4 \
-       -G "$GTF_FILE" \
-       -o "$sample_out" \
-      "$REF_INDEX" \
-      "$r1" "$r2"
-echo  "Finished mapping $sample_id"
+    # Define read 1 and read 2 file paths
+    r1="${RAW_DIR}/${sample_id}_1.fastq.gz"
+    r2="${RAW_DIR}/${sample_id}_2.fastq.gz"
 
-if [ -f "$sample_out/accepted_hits.bam" ]; then
+    # Define the output directory for the current sample
+    sample_out="${OUT_DIR}/${sample_id}"
+    mkdir -p "$sample_out"
+
+    # Run TopHat for spliced alignment
+    tophat -p 4 \
+           -G "$GTF_FILE" \
+           -o "$sample_out" \
+           "$REF_INDEX" \
+           "$r1" "$r2"
+
+    # Confirm completion of alignment
+    echo "Finished mapping $sample_id"
+
+    # Copy the accepted BAM file to a central directory
+    if [ -f "$sample_out/accepted_hits.bam" ]; then
         cp "$sample_out/accepted_hits.bam" "$BAM_DIR/${sample_id}.bam"
-        echo "--> Saved consolidated BAM to $BAM_DIR/${sample_id}.bam"
-fi
+        echo "--> Saved BAM file to $BAM_DIR/${sample_id}.bam"
+    fi
 
 done
 
+# Print completion message
 echo "Mapping of all samples completed"
 ```
 
@@ -189,6 +256,8 @@ Script 4 data processing:
 
 ```{bash}
 #!/bin/bash
+# SLURM job configuration for BAM processing
+
 #SBATCH --partition=msc_appbio
 #SBATCH --job-name=bam_processing
 #SBATCH --output=logs/processing_%j.output
@@ -198,53 +267,62 @@ Script 4 data processing:
 #SBATCH --mem=16G
 #SBATCH --ntasks=1
 
-#Set up enviorment 
+# Enable conda commands in the current shell
 eval "$(conda shell.bash hook)"
+
+# Activate the conda environment containing Picard
 conda activate isobutanol_paper
 
-#Define Directories
+# Define the directory containing input BAM files
 INPUT_DIR="processed_data/bams"
+
+# Define the directory for processed BAM files
 OUTPUT_DIR="processed_data/processed_bams"
 
+# Create output directories if they do not exist
 mkdir -p "$OUTPUT_DIR"
 mkdir -p logs
 
-#Code logic
+# Loop through all BAM files
 for bam_file in "$INPUT_DIR"/*.bam; do
-filename=$(basename "$bam_file")
-sample_id="${filename%.bam}"
 
-echo "Processing Sample : $sample_id"
+    # Extract the sample name from the BAM filename
+    filename=$(basename "$bam_file")
+    sample_id="${filename%.bam}"
 
-#Intermediate files for program
-sorted_bam="${OUTPUT_DIR}/${sample_id}_sorted.bam"
-dedup_bam="${OUTPUT_DIR}/${sample_id}_deduplicated.bam" 
-#shows the deduplicated version, ready for quantification
-metrics_file="${OUTPUT_DIR}/${sample_id}_metrics.txt"
-#allows for log of the data removed post-processing 
+    # Print the current sample being processed
+    echo "Processing sample: $sample_id"
 
+    # Define intermediate and final BAM file paths
+    sorted_bam="${OUTPUT_DIR}/${sample_id}_sorted.bam"
+    dedup_bam="${OUTPUT_DIR}/${sample_id}_deduplicated.bam"
+    metrics_file="${OUTPUT_DIR}/${sample_id}_metrics.txt"
 
-#Sorting bam files via picard
-picard SortSam \
-I="$bam_file" \
-O="$sorted_bam" \
-SORT_ORDER=coordinate \
-VALIDATION_STRINGENCY=LENIENT
+    # Sort BAM file by genomic coordinates
+    picard SortSam \
+        I="$bam_file" \
+        O="$sorted_bam" \
+        SORT_ORDER=coordinate \
+        VALIDATION_STRINGENCY=LENIENT
 
-#Removing dupes
-picard MarkDuplicates \
-I="$sorted_bam" \
-O="$dedup_bam" \
-M="$metrics_file" \
-REMOVE_DUPLICATES=true \
-VALIDATION_STRINGENCY=LENIENT
-rm "$sorted_bam" #removing intermediate files needed 
+    # Remove PCR duplicates from the sorted BAM file
+    picard MarkDuplicates \
+        I="$sorted_bam" \
+        O="$dedup_bam" \
+        M="$metrics_file" \
+        REMOVE_DUPLICATES=true \
+        VALIDATION_STRINGENCY=LENIENT
 
-echo "Finished $sample_id processing"
+    # Remove intermediate sorted BAM file
+    rm "$sorted_bam"
+
+    # Confirm completion for the current sample
+    echo "Finished processing $sample_id"
 
 done
 
-echo "All samples processed, located in $OUTPUT_DIR"
+# Print completion message
+echo "All samples processed successfully"
 ```
 
 This script was used to perform standardized post-alignment processing of RNA-seq BAM files prior to downstream quantification. Job parameters were defined through the scheduler, and a Conda environment containing Picard was activated at runtime.
@@ -259,6 +337,8 @@ Script 5 quantification:
 
 ```{bash}
 #!/bin/bash
+# SLURM job configuration for transcript quantification
+
 #SBATCH --partition=msc_appbio
 #SBATCH --job-name=cufflinks_quant
 #SBATCH --output=logs/quantification_%j.output
@@ -268,43 +348,59 @@ Script 5 quantification:
 #SBATCH --mem=8G
 #SBATCH --ntasks=4
 
-#Initialise conda env
+# Enable conda commands in the current shell
 eval "$(conda shell.bash hook)"
+
+# Activate the conda environment containing Cufflinks
 conda activate isobutanol_paper
 
-#Set up Directories
+# Define the directory containing processed BAM files
 INPUT_DIR="processed_data/processed_bams"
+
+# Define the output directory for Cufflinks results
 OUTPUT_DIR="processed_data/cufflinks"
+
+# Define the reference annotation file
 REF_ANNOTATION="References/genes.gtf"
+
+# Define the mask file for rRNA and tRNA
 MASK_FILE="References/rRNA_tRNA_mask.gtf"
 
+# Create output directories if they do not exist
 mkdir -p "$OUTPUT_DIR"
 mkdir -p logs
 
-# Creating mask file (Extracting rRNA and tRNA lines from the annotation file)
+# Create a mask file containing rRNA and tRNA annotations
 echo "Creating rRNA/tRNA mask file..."
 grep -E 'rRNA|tRNA' "$REF_ANNOTATION" > "$MASK_FILE"
 
-#Code logic
-for bam_file in "$INPUT_DIR"/*_deduplicated.bam
-do
-    filename=$(basename "$bam_file") #Decouple bam suffix
+# Loop through all deduplicated BAM files
+for bam_file in "$INPUT_DIR"/*_deduplicated.bam; do
+
+    # Extract the sample name from the BAM filename
+    filename=$(basename "$bam_file")
     sample_id="${filename%_deduplicated.bam}"
+
+    # Print the current sample being quantified
     echo "Quantifying sample: $sample_id"
 
+    # Define the output directory for the current sample
     sample_out="${OUTPUT_DIR}/${sample_id}"
     mkdir -p "$sample_out"
 
-    #Cufflinks programme
+    # Run Cufflinks for transcript quantification
     cufflinks -p 4 \
-    -G "$REF_ANNOTATION" \
-    -M "$MASK_FILE" \
-    -o "$sample_out" \
-    "$bam_file"
+              -G "$REF_ANNOTATION" \
+              -M "$MASK_FILE" \
+              -o "$sample_out" \
+              "$bam_file"
 
+    # Confirm completion for the current sample
     echo "Finished $sample_id"
+
 done
 
+# Print completion message
 echo "Quantification step complete"
 ```
 
@@ -318,6 +414,8 @@ Script 6 differential expression analysis:
 
 ```{bash}
 #!/bin/bash
+# SLURM job configuration for differential expression analysis
+
 #SBATCH --partition=msc_appbio
 #SBATCH --job-name=cuffdiff_de
 #SBATCH --output=logs/DE_analysis_%j.output
@@ -328,34 +426,41 @@ Script 6 differential expression analysis:
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 
-# Initialize Environment
+# Enable conda commands in the current shell
 eval "$(conda shell.bash hook)"
+
+# Activate the conda environment containing Cuffdiff
 conda activate isobutanol_paper
 
-# Set up Directories
+# Define the directory containing processed BAM files
 BAM_DIR="processed_data/processed_bams"
+
+# Define the output directory for Cuffdiff results
 OUTPUT_DIR="processed_data/cuffdiff"
+
+# Define the reference GTF annotation file
 REF_GTF="References/genes.gtf"
+
+# Define the mask file for non-coding RNAs
 MASK_FILE="References/rRNA_tRNA_mask.gtf"
 
+# Create output directories if they do not exist
 mkdir -p "$OUTPUT_DIR"
 mkdir -p logs
 
-# Creating mask file (with non-coding RNA added for robustness)
+# Create a mask file containing non-coding RNA annotations
 grep -iE 'rRNA|tRNA|snoRNA|snRNA|ncRNA' "$REF_GTF" > "$MASK_FILE"
 
-# Files 94-97 had 0 expression of GLN3
+# Define BAM files for each experimental condition
 GLN3_NO_ISO="${BAM_DIR}/ERR3450094_deduplicated.bam,${BAM_DIR}/ERR3450095_deduplicated.bam"
 GLN3_ISO="${BAM_DIR}/ERR3450096_deduplicated.bam,${BAM_DIR}/ERR3450097_deduplicated.bam"
-
-# WILD TYPE (WT)
-# Files 98-101 had expression of GLN3
 WT_NO_ISO="${BAM_DIR}/ERR3450098_deduplicated.bam,${BAM_DIR}/ERR3450099_deduplicated.bam"
 WT_ISO="${BAM_DIR}/ERR3450100_deduplicated.bam,${BAM_DIR}/ERR3450101_deduplicated.bam"
 
-echo "Starting differential expression analysis with cuffdiff"
+# Print message indicating start of differential expression analysis
+echo "Starting differential expression analysis with Cuffdiff"
 
-# Run Cuffdiff
+# Run Cuffdiff with four experimental conditions
 cuffdiff \
     -p 4 \
     -o "$OUTPUT_DIR" \
@@ -366,7 +471,8 @@ cuffdiff \
     "$REF_GTF" \
     "$GLN3_NO_ISO" "$GLN3_ISO" "$WT_NO_ISO" "$WT_ISO"
 
-echo "Differential Expression Complete, results in $OUTPUT_DIR/gene_exp.diff"
+# Print completion message
+echo "Differential expression analysis complete"
 ```
 
 This Script was conducted using Cuffdiff. Aligned, deduplicated BAM files were organized into four biological conditions (GLN3_NoIso, GLN3_Iso, WT_NoIso, WT_Iso), each containing replicates. To prevent inflated expression estimates from highly abundant non-coding RNAs, a mask file containing rRNA, tRNA, snoRNA, snRNA, and ncRNA annotations was generated and applied during analysis. Cuffdiff was run in reference-guided mode using the curated GTF annotation and an fr-unstranded library setting. The resulting differential expression statistics were reported in the default output files, including gene_exp.diff.
